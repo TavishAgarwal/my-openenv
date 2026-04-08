@@ -1,0 +1,38 @@
+name: inboxops
+version: "1.0.0"
+description: >
+  AI agent training environment simulating an operations analyst's daily
+  workload — email triage, ticket routing, and financial data reconciliation.
+tags:
+  - openenv
+  - enterprise
+  - multi-task
+  - nlp
+  - tool-use
+tasks:
+  - id: task1
+    name: Email Triage
+    difficulty: easy
+    max_score: 1.0
+  - id: task2
+    name: Support Ticket Routing
+    difficulty: medium
+    max_score: 1.0
+  - id: task3
+    name: Data Reconciliation
+    difficulty: hard
+    max_score: 1.0
+observation_space:
+  type: object
+  fields: [inbox, tickets, db_records, invoices, current_task_id, step_count, task_complete]
+action_space:
+  types:
+    - LabelEmailAction
+    - RouteTicketAction
+    - QueryDatabaseAction
+    - FlagDiscrepancyAction
+    - SubmitReportAction
+reward:
+  incremental: true
+  terminal: true
+  range: [0.0, 1.0]
