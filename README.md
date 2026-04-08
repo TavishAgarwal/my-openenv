@@ -1,13 +1,12 @@
 ---
-title: My Env
+title: InboxOps
 emoji: 🚀
 colorFrom: blue
-colorTo: green
-sdk: static
-app_file: index.html
+colorTo: purple
+sdk: docker
+app_port: 7860
 pinned: false
 ---
-
 # InboxOps
 
 **An OpenEnv-compliant AI agent training environment simulating an operations analyst's daily workload.**
