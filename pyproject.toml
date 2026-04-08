@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my-openenv"
+version = "0.1.0"
+description = "An OpenEnv-compliant AI agent training environment simulating an operations analyst's daily workload."
+authors = [
+    { name = "TavishAgarwal" }
+]
+requires-python = ">=3.8"
+dependencies = [
+    "pydantic>=2.0",
+    "faker>=24.0",
+    "openai>=1.0",
+    "pytest>=8.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0"
+]
+
+[tool.setuptools]
+packages = ["environment", "tasks"]
