@@ -1,14 +1,12 @@
-title: {{title}}
-emoji: {{emoji}}
-colorFrom: {{colorFrom}}
-colorTo: {{colorTo}}
-sdk: {{sdk}}
-sdk_version: "{{sdkVersion}}"
-{{#pythonVersion}}
-python_version: "{{pythonVersion}}"
-{{/pythonVersion}}
-app_file: app.py
+---
+title: My Env
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: static
+app_file: index.html
 pinned: false
+---
 
 # InboxOps
 
