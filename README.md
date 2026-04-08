@@ -1,3 +1,15 @@
+title: {{title}}
+emoji: {{emoji}}
+colorFrom: {{colorFrom}}
+colorTo: {{colorTo}}
+sdk: {{sdk}}
+sdk_version: "{{sdkVersion}}"
+{{#pythonVersion}}
+python_version: "{{pythonVersion}}"
+{{/pythonVersion}}
+app_file: app.py
+pinned: false
+
 # InboxOps
 
 **An OpenEnv-compliant AI agent training environment simulating an operations analyst's daily workload.**
