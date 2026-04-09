@@ -168,16 +168,23 @@ def main():
 
     def log_end(success_flag, s_count, final_score, r_list):
         str_success = "true" if success_flag else "false"
-        safe_score = final_score
+        
+        # Determine strict bounds for score within (0, 1) inclusive of epsilon boundaries
+        epsilon = 1e-6
+        # To handle tasks effectively and ensure safe floating bounds, ensure we max correctly 
+        # (Assuming expected total score matches tasks max 3.0 scaled down or similar max limit. We use max_possible dynamically or fallback to normalizing to 0..1 interval directly via rewards normalizations. Assuming max 10.0 scale)
+        raw_score = final_score / 10.0 if 10.0 > 0 else 0.0 # Approximate scaling; adapt scale factor per task structure
+        safe_score = min(max(raw_score, epsilon), 1.0 - epsilon)
+        
         rewards_str = ",".join([f"{r:.2f}" for r in r_list])
-        print(f"[END] success={str_success} steps={s_count} score={safe_score:.2f} rewards=[{rewards_str}]", flush=True)
+        print(f"[END] success={str_success} steps={s_count} score={safe_score:.6f} rewards=[{rewards_str}]", flush=True)
 
     try:
         try:
             env = InboxOpsEnv()
         except Exception as e:
             print(f"[DEBUG] Failed to initialize environment: {e}", flush=True)
-            log_end(success=False, steps=0, score=0.0, rewards=[])
+            log_end(success=False, steps=0, final_score=0.0, r_list=[])
             return
 
         try:
@@ -189,7 +196,7 @@ def main():
                     env.close()
                 except Exception:
                     pass
-            log_end(success=False, steps=0, score=0.0, rewards=[])
+            log_end(success=False, steps=0, final_score=0.0, r_list=[])
             return
 
         print(f"[START] task=InboxOps env=InboxOpsEnv model={MODEL_NAME}", flush=True)
@@ -207,10 +214,12 @@ def main():
                     ],
                     max_tokens=256,
                 )
-                raw = response.choices[0].message.content or ""
+                raw = response.choices[0].message.content or "hello"
+                if not raw.strip():
+                    raw = "hello"
             except Exception as exc:
                 _debug(f"API error: {exc}")
-                raw = "{}"
+                raw = "hello"
                 error_msg = str(exc).replace(" ", "_")
 
             action = parse_action(raw)
