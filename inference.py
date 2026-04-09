@@ -40,11 +40,20 @@ signal.alarm(18 * 60)
 # ---------------------------------------------------------------------------
 # OpenAI client from environment variables
 # ---------------------------------------------------------------------------
-client = OpenAI(
-    base_url=os.environ["API_BASE_URL"],
-    api_key=os.environ["HF_TOKEN"],
-)
-MODEL = os.environ["MODEL_NAME"]
+try:
+    api_base_url = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
+    hf_token = os.environ.get("HF_TOKEN", "default-token")
+    client = OpenAI(
+        base_url=api_base_url,
+        api_key=hf_token,
+    )
+except Exception as e:
+    print(f"Warning: Failed to initialize OpenAI client: {e}", file=sys.stderr)
+    client = None
+
+MODEL = os.environ.get("MODEL_NAME", "default-model")
+if MODEL == "default-model":
+    print("Warning: MODEL_NAME not set, using default", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -155,28 +164,40 @@ def parse_action(raw: str) -> Action | None:
         elif action_type == "submit_report":
             return SubmitReportAction(**data)
         else:
-            _debug(f"  Unknown action_type: {action_type}")
-            return None
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        _debug(f"  Failed to parse action: {exc}")
-        return None
+            raise ValueError(f"Unknown action type: {action_type}")
+        
+    except json.JSONDecodeError:
+        _debug("Failed to decode JSON from model block.", raw)
+        # Random safe fallback to prevent crash from hallucinated formats
+        return Action(action_type="label_email", email_id="unknown", label="general", urgency=1, next_action="archive")
+    except Exception as e:
+        _debug(f"Action parsing error: {e}", raw)
+        return Action(action_type="label_email", email_id="unknown", label="general", urgency=1, next_action="archive")
 
+def main():
+    _debug("Initializing InboxOps environment...")
+    
+    if client is None:
+        _debug("OpenAI client not initialized, exiting.")
+        sys.exit(1)
 
-# ---------------------------------------------------------------------------
-# Main episode runner
-# ---------------------------------------------------------------------------
+    try:
+        env = InboxOpsEnv()
+        obs = env.reset(seed=int(os.getenv("SEED", 42)))
+    except Exception as e:
+        _debug(f"Failed to initialize environment: {e}")
+        sys.exit(1)
+        
+    _debug(f"Using model: {MODEL}")
 
-def run_episode(seed: int = 42) -> dict:
-    """Run a complete episode using the LLM inference API."""
-    env = InboxOpsEnv(seed=seed)
-    obs = env.reset()
+    start_time = time.time()
     total_reward = 0.0
+    step_count = 0
     task_scores: dict[str, float] = {}
 
     # [START] log
-    _log("START", {"episode": 1, "seed": seed})
+    _log("START", {"episode": 1, "seed": os.getenv("SEED", 42)})
 
-    step_count = 0
     while step_count < MAX_STEPS:
         context = build_context(obs)
 
@@ -231,26 +252,18 @@ def run_episode(seed: int = 42) -> dict:
         print(f"[WARN] Step cap reached", file=sys.stderr)
 
     # [END] log
-    _log("END", {
+    summary = {
         "task1_score": round(task_scores.get("task1", 0.0), 4),
         "task2_score": round(task_scores.get("task2", 0.0), 4),
         "task3_score": round(task_scores.get("task3", 0.0), 4),
         "total_reward": round(total_reward, 4),
         "steps": step_count + 1,
-    })
-
-    return task_scores
-
+    }
+    _log("END", summary)
 
 if __name__ == "__main__":
-    if not os.environ.get("HF_TOKEN"):
-        _debug("ERROR: HF_TOKEN not set.")
+    try:
+        main()
+    except Exception as e:
+        print(f"Fatal error: {e}")
         sys.exit(1)
-    if not os.environ.get("API_BASE_URL"):
-        _debug("ERROR: API_BASE_URL not set.")
-        sys.exit(1)
-    if not os.environ.get("MODEL_NAME"):
-        _debug("ERROR: MODEL_NAME not set.")
-        sys.exit(1)
-
-    run_episode()
