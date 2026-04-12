@@ -12,6 +12,7 @@ from typing import Any
 from openai import OpenAI
 
 from environment.env import InboxOpsEnv
+from environment.graders import normalize_score, SCORE_FLOOR
 from environment.models import (
     Action,
     FlagDiscrepancyAction,
@@ -21,14 +22,7 @@ from environment.models import (
     SubmitReportAction,
 )
 
-# ---------------------------------------------------------------------------
-# Score clamping — guarantees score is strictly in (0, 1), never 0.0 or 1.0
-# ---------------------------------------------------------------------------
-EPSILON = 1e-6
 
-def _clamp_score(raw: float) -> float:
-    """Clamp a raw score to the open interval (0, 1)."""
-    return min(max(float(raw), EPSILON), 1.0 - EPSILON)
 
 # ---------------------------------------------------------------------------
 # Timeout guard
@@ -175,7 +169,7 @@ def run_task(task_name: str, seed: int):
 
     def log_end(success_flag, s_count, raw_score_val, r_list, t_name):
         str_success = "true" if success_flag else "false"
-        safe_score = _clamp_score(raw_score_val)
+        safe_score = normalize_score(raw_score_val)
         rewards_str = ",".join([f"{r:.6f}" for r in r_list])
         print(f"[END] success={str_success} steps={s_count} score={safe_score:.6f} rewards=[{rewards_str}]", flush=True)
 
@@ -184,7 +178,7 @@ def run_task(task_name: str, seed: int):
             env = InboxOpsEnv(seed=seed)
         except Exception as e:
             print(f"[DEBUG] Failed to initialize environment: {e}", flush=True)
-            log_end(success=False, s_count=0, raw_score_val=EPSILON, r_list=[], t_name=task_name)
+            log_end(success=False, s_count=0, raw_score_val=SCORE_FLOOR, r_list=[], t_name=task_name)
             return
 
         try:
@@ -199,7 +193,7 @@ def run_task(task_name: str, seed: int):
                     env.close()
                 except Exception:
                     pass
-            log_end(success=False, s_count=0, raw_score_val=EPSILON, r_list=[], t_name=task_name)
+            log_end(success=False, s_count=0, raw_score_val=SCORE_FLOOR, r_list=[], t_name=task_name)
             return
 
         print(f"[START] task={task_name} env=InboxOpsEnv model={MODEL_NAME}", flush=True)
@@ -235,7 +229,7 @@ def run_task(task_name: str, seed: int):
             except Exception as exc:
                 print(f"[DEBUG] env.step() failed: {exc}", flush=True)
                 error_msg = str(exc).replace(" ", "_")
-                val = 0.0
+                val = SCORE_FLOOR
                 total_reward += val
                 rewards_list.append(val)
                 print(f"[STEP] step={step_count + 1} action={action.action_type} reward={val:.6f} done=true error={error_msg}", flush=True)
@@ -259,9 +253,9 @@ def run_task(task_name: str, seed: int):
     finally:
         total_sum = sum(rewards_list)
         if max_total_reward <= 0:
-            raw_score = EPSILON
+            raw_score = SCORE_FLOOR
         else:
-            raw_score = _clamp_score(total_sum / max_total_reward)
+            raw_score = normalize_score(total_sum / max_total_reward)
 
         log_end(success, step_count, raw_score, rewards_list, task_name)
         

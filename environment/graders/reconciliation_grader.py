@@ -15,6 +15,7 @@ from environment.models import (
     PlantedDiscrepancy,
     StepReward,
 )
+from environment.graders.score_utils import normalize_score, SCORE_FLOOR
 
 
 def grade_query_action(sql: str, conn: sqlite3.Connection) -> dict:
@@ -127,16 +128,13 @@ def grade_report_submission(
 
     # Normalize: max possible = len(planted) × 0.20
     max_possible = len(planted) * 0.20 if planted else 1.0
-    _EPS = 1e-6
-    # Clamp final score to open interval (0, 1) — never exactly 0.0 or 1.0
-    normalized = min(max(raw_score / max_possible, _EPS), 1.0 - _EPS)
+    normalized = raw_score / max_possible
 
     breakdown["raw_score"] = round(raw_score, 6)
-    breakdown["normalized_score"] = round(normalized, 6)
 
-    # Round to 6dp (preserves 1e-6 epsilon), then re-clamp as safety net
-    # because round() can push a boundary value to exactly 0.0 or 1.0.
-    final_value = min(max(round(normalized, 6), _EPS), 1.0 - _EPS)
+    # Clamp to safe open interval (0, 1) via shared helper
+    final_value = normalize_score(normalized)
+    breakdown["normalized_score"] = round(final_value, 6)
 
     return StepReward(
         value=final_value,

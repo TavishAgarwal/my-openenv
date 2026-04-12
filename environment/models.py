@@ -10,7 +10,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -169,3 +169,11 @@ class StepReward(BaseModel):
     breakdown: Dict[str, float]    # {"email_correct": 0.05, "penalty": 0.0, …}
     done: bool
     info: dict
+
+    @model_validator(mode="after")
+    def _clamp_terminal_value(self) -> "StepReward":
+        """Safety net: if done=True the value is a final task score
+        and must be strictly inside (0, 1)."""
+        if self.done:
+            self.value = max(0.01, min(0.99, self.value))
+        return self

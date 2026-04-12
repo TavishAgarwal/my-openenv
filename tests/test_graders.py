@@ -39,6 +39,7 @@ class TestVendorMismatchScoring:
         # normalized = 0.20 / 1.60 = 0.125
         expected = 0.20 / (len(planted) * 0.20)
         assert reward.value == pytest.approx(expected, abs=0.01)
+        assert 0.0 < reward.value < 1.0  # strictly inside (0, 1)
 
 
 class TestRedHerringPenalised:
@@ -71,7 +72,8 @@ class TestRedHerringPenalised:
 
         assert done is True
         # Only a false positive: raw = -0.10, max = 8*0.20 = 1.60
-        # normalized = max(0.0, -0.10/1.60) = 0.0  (clamped)
-        assert reward.value == pytest.approx(0.0, abs=0.01)
+        # normalized would be negative → clamped to SCORE_FLOOR (0.01)
+        assert reward.value == pytest.approx(0.01, abs=0.005)
+        assert 0.0 < reward.value < 1.0  # strictly inside (0, 1)
         # Verify the false positive appears in the breakdown
         assert any("false_positive" in k for k in reward.breakdown)

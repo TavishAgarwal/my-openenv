@@ -346,6 +346,7 @@ class TestSubmitReport:
 
         assert done is True
         assert reward.value >= 0.9
+        assert reward.value < 1.0  # must be strictly less than 1.0
         assert "final_scores" in info
 
     def test_empty_report_scores_zero(self):
@@ -356,8 +357,8 @@ class TestSubmitReport:
         _, reward, done, _ = env.step(report_action)
 
         assert done is True
-        # No flags → near-zero score (clamped to epsilon, never exact 0.0)
-        assert reward.value == pytest.approx(1e-6, abs=1e-7)
+        # No flags → near-zero score (clamped to SCORE_FLOOR=0.01, never exact 0.0)
+        assert reward.value == pytest.approx(0.01, abs=0.005)
 
     def test_false_positives_penalised(self):
         env = InboxOpsEnv(seed=42)
@@ -376,8 +377,8 @@ class TestSubmitReport:
         _, reward, done, _ = env.step(report_action)
 
         assert done is True
-        # Should be near-zero due to false positive (clamped to epsilon)
-        assert reward.value <= 1e-6 + 1e-7
+        # Should be at SCORE_FLOOR due to false positive (clamped to 0.01)
+        assert reward.value <= 0.01 + 0.005
 
 
 # -----------------------------------------------------------------------
@@ -548,8 +549,8 @@ class TestFinalScores:
 
         for task_id in ("task1", "task2", "task3"):
             score = info["final_scores"][task_id]
-            assert 0.0 <= score <= 1.0, (
-                f"final_scores[{task_id}] = {score} is outside [0.0, 1.0]"
+            assert 0.0 < score < 1.0, (
+                f"final_scores[{task_id}] = {score} is not strictly inside (0, 1)"
             )
 
 
@@ -564,3 +565,134 @@ class TestStateMethod:
         state = env.state()
         assert state.current_task_id == obs.current_task_id
         assert state.step_count == obs.step_count
+
+
+# -----------------------------------------------------------------------
+# Test: normalize_score edge cases
+# -----------------------------------------------------------------------
+
+class TestNormalizeScore:
+    """Verify normalize_score handles every degenerate input safely."""
+
+    def test_zero_returns_floor(self):
+        from environment.graders.score_utils import normalize_score, SCORE_FLOOR
+        assert normalize_score(0.0) == SCORE_FLOOR
+
+    def test_one_returns_ceil(self):
+        from environment.graders.score_utils import normalize_score, SCORE_CEIL
+        assert normalize_score(1.0) == SCORE_CEIL
+
+    def test_negative_returns_floor(self):
+        from environment.graders.score_utils import normalize_score, SCORE_FLOOR
+        assert normalize_score(-5.0) == SCORE_FLOOR
+
+    def test_above_one_returns_ceil(self):
+        from environment.graders.score_utils import normalize_score, SCORE_CEIL
+        assert normalize_score(99.0) == SCORE_CEIL
+
+    def test_none_returns_floor(self):
+        from environment.graders.score_utils import normalize_score, SCORE_FLOOR
+        assert normalize_score(None) == SCORE_FLOOR
+
+    def test_nan_returns_floor(self):
+        from environment.graders.score_utils import normalize_score, SCORE_FLOOR
+        assert normalize_score(float("nan")) == SCORE_FLOOR
+
+    def test_inf_returns_floor(self):
+        from environment.graders.score_utils import normalize_score, SCORE_FLOOR
+        assert normalize_score(float("inf")) == SCORE_FLOOR
+
+    def test_midrange_passes_through(self):
+        from environment.graders.score_utils import normalize_score
+        assert normalize_score(0.42) == pytest.approx(0.42)
+
+    def test_result_never_exactly_zero_or_one(self):
+        from environment.graders.score_utils import normalize_score
+        for val in [0.0, 1.0, -1.0, 2.0, None, float("nan"), float("inf")]:
+            result = normalize_score(val)
+            assert 0.0 < result < 1.0, f"normalize_score({val}) = {result}"
+
+
+# -----------------------------------------------------------------------
+# Test: StepReward model-level safety net
+# -----------------------------------------------------------------------
+
+class TestStepRewardModelValidator:
+    """Terminal StepReward (done=True) must auto-clamp to (0, 1)."""
+
+    def test_done_true_clamps_zero(self):
+        r = StepReward(value=0.0, breakdown={}, done=True, info={})
+        assert 0.0 < r.value < 1.0
+
+    def test_done_true_clamps_one(self):
+        r = StepReward(value=1.0, breakdown={}, done=True, info={})
+        assert 0.0 < r.value < 1.0
+
+    def test_done_true_clamps_negative(self):
+        r = StepReward(value=-0.5, breakdown={}, done=True, info={})
+        assert 0.0 < r.value < 1.0
+
+    def test_done_false_allows_zero(self):
+        """Non-terminal rewards (per-step) are allowed to be 0.0."""
+        r = StepReward(value=0.0, breakdown={}, done=False, info={})
+        assert r.value == 0.0  # per-step rewards are not task scores
+
+    def test_done_false_allows_negative(self):
+        """Non-terminal rewards can be negative (penalties)."""
+        r = StepReward(value=-0.2, breakdown={}, done=False, info={})
+        assert r.value == -0.2
+
+
+# -----------------------------------------------------------------------
+# Test: Multi-seed strict (0, 1) verification across all 3 tasks
+# -----------------------------------------------------------------------
+
+class TestStrictScoreBounds:
+    """For multiple seeds, run a full episode and verify all final_scores
+    are strictly inside (0, 1). This is the definitive regression test."""
+
+    @pytest.mark.parametrize("seed", [42, 99, 123])
+    def test_all_scores_strictly_between_zero_and_one(self, seed: int):
+        env = InboxOpsEnv(seed=seed)
+        obs = env.reset()
+
+        # Task 1: label all emails with ground truth
+        for email in obs.inbox:
+            gt = env._email_gt[email.email_id]
+            action = LabelEmailAction(
+                email_id=email.email_id,
+                label=gt.label,
+                urgency=gt.urgency,
+                next_action=gt.next_action,
+            )
+            obs, _, _, _ = env.step(action)
+
+        # Task 2: route all tickets with ground truth
+        for ticket in obs.tickets:
+            gt = env._ticket_gt[ticket.ticket_id]
+            action = RouteTicketAction(
+                ticket_id=ticket.ticket_id,
+                team=gt.team,
+                escalate=gt.escalate,
+                draft_message="Routing for billing invoice account pipeline review.",
+            )
+            obs, _, _, _ = env.step(action)
+
+        # Task 3: submit empty report (worst case — should still be > 0)
+        report = SubmitReportAction(report={"summary": "Done."})
+        _, reward, done, info = env.step(report)
+
+        assert done is True
+        assert "final_scores" in info, f"Seed {seed}: no final_scores in info"
+
+        for task_id in ("task1", "task2", "task3"):
+            score = info["final_scores"][task_id]
+            assert 0.0 < score < 1.0, (
+                f"Seed {seed}: final_scores[{task_id}] = {score} violates (0, 1)"
+            )
+
+        # The terminal reward.value must also be strictly (0, 1)
+        assert 0.0 < reward.value < 1.0, (
+            f"Seed {seed}: terminal reward.value = {reward.value} violates (0, 1)"
+        )
+

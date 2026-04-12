@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from environment.env import InboxOpsEnv
+from environment.graders import normalize_score, SCORE_FLOOR
 from environment.models import (
     FlagDiscrepancyAction,
     LabelEmailAction,
@@ -146,7 +147,7 @@ def run_all_tasks(seed: int = 42) -> dict:
         obs, reward, done, info = env.step(action)
         total_steps += 1
 
-    task1_score = env._scores.get("task1", 0.0)
+    task1_score = env._scores.get("task1", SCORE_FLOOR)
 
     # --- Task 2: Ticket routing ---
     for ticket in obs.tickets:
@@ -160,18 +161,18 @@ def run_all_tasks(seed: int = 42) -> dict:
         obs, reward, done, info = env.step(action)
         total_steps += 1
 
-    task2_score = env._scores.get("task2", 0.0)
+    task2_score = env._scores.get("task2", SCORE_FLOOR)
 
     # --- Task 3: Reconciliation ---
     _run_reconciliation(env)
     total_steps += 2  # at least query + submit
 
-    task3_score = env._scores.get("task3", 0.0)
+    task3_score = env._scores.get("task3", SCORE_FLOOR)
 
     results = {
-        "task1": {"score": round(task1_score, 4), "steps": len(obs.inbox)},
-        "task2": {"score": round(task2_score, 4), "steps": len(obs.tickets)},
-        "task3": {"score": round(task3_score, 4), "steps": total_steps},
+        "task1": {"score": round(normalize_score(task1_score), 4), "steps": len(obs.inbox)},
+        "task2": {"score": round(normalize_score(task2_score), 4), "steps": len(obs.tickets)},
+        "task3": {"score": round(normalize_score(task3_score), 4), "steps": total_steps},
     }
 
     return results

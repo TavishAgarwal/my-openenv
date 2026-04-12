@@ -14,6 +14,7 @@ import uuid
 from fastapi import FastAPI, HTTPException
 
 from environment.env import InboxOpsEnv
+from environment.graders import normalize_score
 from environment.models import (
     FlagDiscrepancyAction,
     LabelEmailAction,
@@ -118,11 +119,10 @@ def step(body: dict):
 
     # Defense-in-depth: if done=True, clamp all score values to open (0, 1)
     if done:
-        _EPS = 1e-6
-        reward_data["value"] = min(max(float(reward_data.get("value", _EPS)), _EPS), 1.0 - _EPS)
+        reward_data["value"] = normalize_score(float(reward_data.get("value", 0.01)))
         if "final_scores" in info:
             info["final_scores"] = {
-                k: min(max(float(v), _EPS), 1.0 - _EPS)
+                k: normalize_score(float(v))
                 for k, v in info["final_scores"].items()
             }
 

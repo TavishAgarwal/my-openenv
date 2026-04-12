@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import List
 
 from environment.generator import generate_episode
+from environment.graders import normalize_score, SCORE_FLOOR, SCORE_CEIL
 from environment.graders.email_grader import grade_email_action
 from environment.graders.reconciliation_grader import (
     grade_query_action,
@@ -34,8 +35,6 @@ from environment.models import (
 )
 
 
-# Score epsilon — ensures task scores are strictly in (0, 1)
-_SCORE_EPS = 1e-6
 
 
 class InboxOpsEnv:
@@ -173,14 +172,13 @@ class InboxOpsEnv:
         info = reward.info.copy()
         if done:
             clamped_scores = {
-                k: min(max(v, _SCORE_EPS), 1.0 - _SCORE_EPS)
-                for k, v in self._scores.items()
+                k: normalize_score(v) for k, v in self._scores.items()
             }
             info["final_scores"] = clamped_scores
             info["episode_complete"] = True
             # Also clamp the reward.value itself — the API serializes this
             # directly and the validator may read it as the "task score".
-            clamped_reward_val = min(max(reward.value, _SCORE_EPS), 1.0 - _SCORE_EPS)
+            clamped_reward_val = normalize_score(reward.value)
             if clamped_reward_val != reward.value:
                 reward = reward.model_copy(update={"value": clamped_reward_val})
 
@@ -285,7 +283,7 @@ class InboxOpsEnv:
     def _handle_submit_report(self, action: SubmitReportAction) -> StepReward:
         planted: List[PlantedDiscrepancy] = self._episode["planted_discrepancies"]  # type: ignore[index]
         reward = grade_report_submission(self._flagged, planted)
-        self._scores["task3"] = min(max(reward.value, _SCORE_EPS), 1.0 - _SCORE_EPS)
+        self._scores["task3"] = normalize_score(reward.value)
         # Mark task 3 as complete
         self._state = self._state.model_copy(update={"task_complete": True})  # type: ignore[union-attr]
         return reward
@@ -349,7 +347,7 @@ class InboxOpsEnv:
                 # Normalize task1 score
                 max_possible = total_emails * 0.10
                 if max_possible > 0:
-                    self._scores["task1"] = min(1.0 - _SCORE_EPS, max(_SCORE_EPS, self._scores["task1"] / max_possible))
+                    self._scores["task1"] = normalize_score(self._scores["task1"] / max_possible)
                 self._state = self._state.model_copy(update={"current_task_id": "task2"})
 
         elif current == "task2":
@@ -358,7 +356,7 @@ class InboxOpsEnv:
                 # Normalize task2 score
                 max_possible = total_tickets * 0.20  # 0.10 + 0.05 + 0.05
                 if max_possible > 0:
-                    self._scores["task2"] = min(1.0 - _SCORE_EPS, max(_SCORE_EPS, self._scores["task2"] / max_possible))
+                    self._scores["task2"] = normalize_score(self._scores["task2"] / max_possible)
                 self._state = self._state.model_copy(update={"current_task_id": "task3"})
 
         # task3 completion is handled by _handle_submit_report
