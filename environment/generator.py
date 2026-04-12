@@ -407,6 +407,48 @@ def generate_episode(seed: int = 42) -> dict:
     used_indices.add(rh_date_idx)
 
     # ------------------------------------------------------------------
+    # 4c. Compound discrepancy — INV-013 / PO-011 has TWO types
+    # ------------------------------------------------------------------
+    # Link INV-013 (index 12, originally no PO) to PO-011 (index 10)
+    compound_inv_idx = 12   # INV-013
+    compound_po_idx = 10    # PO-011
+    compound_po = purchase_orders[compound_po_idx]
+    compound_inv = invoices[compound_inv_idx]
+
+    # Mutate: amount mismatch (~18% off)
+    compound_factor = 1 + rng.uniform(0.14, 0.22)
+    compound_amount = round(compound_po.approved_amount * compound_factor, 2)
+    # Mutate: date anomaly (invoice dated before PO approval)
+    compound_bad_date = compound_po.approval_date - timedelta(days=rng.randint(15, 45))
+
+    invoices[compound_inv_idx] = compound_inv.model_copy(update={
+        "po_number": compound_po.po_id,
+        "vendor_name": compound_po.vendor_name,
+        "amount": compound_amount,
+        "date": compound_bad_date,
+    })
+
+    planted.append(PlantedDiscrepancy(
+        invoice_id=f"INV-{compound_inv_idx+1:03d}",
+        po_id=compound_po.po_id,
+        discrepancy_type=DiscrepancyType.AMOUNT_MISMATCH,
+        description=(
+            f"Invoice INV-{compound_inv_idx+1:03d} amount ${compound_amount:.2f} differs from "
+            f"PO {compound_po.po_id} approved amount ${compound_po.approved_amount:.2f}"
+        ),
+    ))
+    planted.append(PlantedDiscrepancy(
+        invoice_id=f"INV-{compound_inv_idx+1:03d}",
+        po_id=compound_po.po_id,
+        discrepancy_type=DiscrepancyType.DATE_ANOMALY,
+        description=(
+            f"Invoice INV-{compound_inv_idx+1:03d} dated {compound_bad_date.isoformat()} is before "
+            f"PO {compound_po.po_id} approval date {compound_po.approval_date.isoformat()}"
+        ),
+    ))
+    used_indices.add(compound_inv_idx)
+
+    # ------------------------------------------------------------------
     # 5. Tickets (10 tickets)
     # ------------------------------------------------------------------
     tier_config = [

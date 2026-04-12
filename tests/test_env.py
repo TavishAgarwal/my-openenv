@@ -316,7 +316,7 @@ class TestSubmitReport:
     def test_perfect_report_scores_high(self, env: InboxOpsEnv):
         # Get planted discrepancies
         planted = env._episode["planted_discrepancies"]
-        assert len(planted) == 8
+        assert len(planted) == 10
 
         # Flag all planted discrepancies
         for p in planted:
@@ -339,7 +339,7 @@ class TestSubmitReport:
                     }
                     for p in planted
                 ],
-                "summary": "Found all 8 discrepancies.",
+                "summary": "Found all 10 discrepancies.",
             }
         )
         _, reward, done, info = env.step(report_action)

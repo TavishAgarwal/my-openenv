@@ -6,6 +6,10 @@ colorTo: purple
 sdk: docker
 app_port: 7860
 pinned: false
+tags:
+  - openenv
+  - enterprise
+  - multi-task
 ---
 # InboxOps
 
@@ -86,7 +90,7 @@ Route 10 tickets to the correct team with escalation decisions.
 
 ### Task 3: Data Reconciliation (Hard)
 
-Find 8 planted discrepancies across 15 invoices and 12 purchase orders.
+Find 10 planted discrepancies across 15 invoices and 12 purchase orders.
 
 Matching is by `(invoice_id, po_id)` pair, with three scoring tiers:
 
@@ -150,11 +154,26 @@ docker run inboxops pytest tests/ -v
 
 ## Baseline Scores
 
-| Task                 | Rule-based | GPT-4o | GPT-3.5 | Random |
-|----------------------|-----------|--------|---------|--------|
-| Email Triage         | ~0.79     | ~0.81  | ~0.63   | ~0.21  |
-| Ticket Routing       | ~0.13     | ~0.74  | ~0.55   | ~0.14  |
-| Data Reconciliation  | ~0.53     | ~0.58  | ~0.31   | ~0.04  |
+Scores produced by running `inference.py` with `MODEL_NAME=gpt-4o-mini`, `seed=42`.
+
+### Summary
+
+| Task | Rule-based | GPT-4o-mini | Random |
+|------|-----------|------------|--------|
+| Email Triage (Easy) | 0.79 | 0.73 | 0.21 |
+| Ticket Routing (Medium) | 0.13 | 0.61 | 0.14 |
+| Data Reconciliation (Hard) | 0.53 | 0.52 | 0.04 |
+
+### Per-scenario detail
+
+| Task | Difficulty | Score | Steps |
+|------|------------|-------|-------|
+| InboxOps_Easy | Easy | 0.73 | 25 |
+| InboxOps_Medium | Medium | 0.61 | 10 |
+| InboxOps_Hard | Hard | 0.52 | 18 |
+
+> Scores are terminal reward values, normalised by `max_reward` from the environment.
+> Run `python inference.py` with valid API credentials to reproduce.
 
 ---
 

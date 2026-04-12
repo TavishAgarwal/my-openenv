@@ -25,7 +25,7 @@ from environment.models import (
 # Timeout guard
 # ---------------------------------------------------------------------------
 def _timeout_handler(sig, frame):
-    print("[DEBUG] timeout", file=sys.stderr, flush=True)
+    print("[DEBUG] hard timeout reached", file=sys.stderr, flush=True)
     sys.exit(1)
 
 signal.signal(signal.SIGALRM, _timeout_handler)
@@ -54,7 +54,8 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-MAX_STEPS = 200
+# Budget: 3 tasks × 20 steps × ~2s/call = ~120s worst case. Well within 20-min limit.
+MAX_STEPS = 60
 
 SYSTEM_PROMPT = """
 You are an operations analyst. You will be given an inbox, ticket queue,
@@ -145,11 +146,11 @@ def parse_action(raw: str) -> Action | None:
             raise ValueError(f"Unknown action type: {action_type}")
         
     except json.JSONDecodeError:
-        _debug("Failed to decode JSON from model block.")
-        return Action(action_type="label_email", email_id="unknown", label="general", urgency=1, next_action="archive")
+        _debug("Failed to decode JSON from model output.")
+        return None
     except Exception as e:
         _debug(f"Action parsing error: {e}")
-        return Action(action_type="label_email", email_id="unknown", label="general", urgency=1, next_action="archive")
+        return None
 
 
 def run_task(task_name: str, seed: int):
@@ -163,19 +164,19 @@ def run_task(task_name: str, seed: int):
     # Will be set from env.max_reward after reset(); stays 0 on early failure
     max_total_reward = 0.0
 
-    def log_end(success_flag, s_count, raw_score_val, r_list):
+    def log_end(success_flag, s_count, raw_score_val, r_list, t_name):
         str_success = "true" if success_flag else "false"
-        epsilon = 1e-4
+        epsilon = 1e-6
         safe_score = min(max(raw_score_val, epsilon), 1.0 - epsilon)
-        rewards_str = ",".join([f"{r:.2f}" for r in r_list])
-        print(f"[END] success={str_success} steps={s_count} score={safe_score:.4f} rewards={rewards_str}", flush=True)
+        rewards_str = ",".join([f"{r:.6f}" for r in r_list])
+        print(f"[END] task={t_name} env=InboxOpsEnv success={str_success} steps={s_count} score={safe_score:.6f} rewards=[{rewards_str}]", flush=True)
 
     try:
         try:
             env = InboxOpsEnv(seed=seed)
         except Exception as e:
             print(f"[DEBUG] Failed to initialize environment: {e}", flush=True)
-            log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[])
+            log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[], t_name=task_name)
             return
 
         try:
@@ -190,7 +191,7 @@ def run_task(task_name: str, seed: int):
                     env.close()
                 except Exception:
                     pass
-            log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[])
+            log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[], t_name=task_name)
             return
 
         print(f"[START] task={task_name} env=InboxOpsEnv model={MODEL_NAME}", flush=True)
@@ -229,7 +230,7 @@ def run_task(task_name: str, seed: int):
                 val = 0.0
                 total_reward += val
                 rewards_list.append(val)
-                print(f"[STEP] step={step_count + 1} action={action.action_type} reward={val:.2f} done=true error={error_msg}", flush=True)
+                print(f"[STEP] step={step_count + 1} action={action.action_type} reward={val:.6f} done=true error={error_msg}", flush=True)
                 break
 
             val = float(reward.value)
@@ -237,7 +238,7 @@ def run_task(task_name: str, seed: int):
             rewards_list.append(val)
             
             str_done = "true" if done else "false"
-            print(f"[STEP] step={step_count + 1} action={action.action_type} reward={val:.2f} done={str_done} error={error_msg}", flush=True)
+            print(f"[STEP] step={step_count + 1} action={action.action_type} reward={val:.6f} done={str_done} error={error_msg}", flush=True)
 
             if done:
                 success = True
@@ -249,9 +250,9 @@ def run_task(task_name: str, seed: int):
         _debug(f"Execution error: {e}")
     finally:
         total_sum = sum(rewards_list)
-        raw_score = total_sum / max_total_reward if max_total_reward > 0 else 1e-4
+        raw_score = total_sum / max_total_reward if max_total_reward > 0 else 0.0
 
-        log_end(success, step_count, raw_score, rewards_list)
+        log_end(success, step_count, raw_score, rewards_list, task_name)
         
         if env and hasattr(env, "close"):
             try:
