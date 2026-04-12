@@ -127,8 +127,9 @@ def grade_report_submission(
 
     # Normalize: max possible = len(planted) × 0.20
     max_possible = len(planted) * 0.20 if planted else 1.0
-    # Clamp final score to [0.0, 1.0]
-    normalized = max(0.0, min(1.0, raw_score / max_possible))
+    _EPS = 1e-6
+    # Clamp final score to open interval (0, 1) — never exactly 0.0 or 1.0
+    normalized = min(max(raw_score / max_possible, _EPS), 1.0 - _EPS)
 
     breakdown["raw_score"] = round(raw_score, 4)
     breakdown["normalized_score"] = round(normalized, 4)

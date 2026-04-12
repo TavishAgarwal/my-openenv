@@ -22,6 +22,15 @@ from environment.models import (
 )
 
 # ---------------------------------------------------------------------------
+# Score clamping — guarantees score is strictly in (0, 1), never 0.0 or 1.0
+# ---------------------------------------------------------------------------
+EPSILON = 1e-6
+
+def _clamp_score(raw: float) -> float:
+    """Clamp a raw score to the open interval (0, 1)."""
+    return min(max(float(raw), EPSILON), 1.0 - EPSILON)
+
+# ---------------------------------------------------------------------------
 # Timeout guard
 # ---------------------------------------------------------------------------
 def _timeout_handler(sig, frame):
@@ -166,8 +175,7 @@ def run_task(task_name: str, seed: int):
 
     def log_end(success_flag, s_count, raw_score_val, r_list, t_name):
         str_success = "true" if success_flag else "false"
-        epsilon = 1e-6
-        safe_score = min(max(raw_score_val, epsilon), 1.0 - epsilon)
+        safe_score = _clamp_score(raw_score_val)
         rewards_str = ",".join([f"{r:.6f}" for r in r_list])
         print(f"[END] success={str_success} steps={s_count} score={safe_score:.6f} rewards=[{rewards_str}]", flush=True)
 
@@ -176,7 +184,7 @@ def run_task(task_name: str, seed: int):
             env = InboxOpsEnv(seed=seed)
         except Exception as e:
             print(f"[DEBUG] Failed to initialize environment: {e}", flush=True)
-            log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[], t_name=task_name)
+            log_end(success=False, s_count=0, raw_score_val=EPSILON, r_list=[], t_name=task_name)
             return
 
         try:
@@ -191,7 +199,7 @@ def run_task(task_name: str, seed: int):
                     env.close()
                 except Exception:
                     pass
-            log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[], t_name=task_name)
+            log_end(success=False, s_count=0, raw_score_val=EPSILON, r_list=[], t_name=task_name)
             return
 
         print(f"[START] task={task_name} env=InboxOpsEnv model={MODEL_NAME}", flush=True)
@@ -250,7 +258,10 @@ def run_task(task_name: str, seed: int):
         _debug(f"Execution error: {e}")
     finally:
         total_sum = sum(rewards_list)
-        raw_score = total_sum / max_total_reward if max_total_reward > 0 else 0.0
+        if max_total_reward <= 0:
+            raw_score = EPSILON
+        else:
+            raw_score = _clamp_score(total_sum / max_total_reward)
 
         log_end(success, step_count, raw_score, rewards_list, task_name)
         
