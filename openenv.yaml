@@ -32,6 +32,9 @@ action_space:
     - QueryDatabaseAction
     - FlagDiscrepancyAction
     - SubmitReportAction
+state_space:
+  type: Observation
+  fields: [inbox, tickets, db_records, invoices, current_task_id, step_count, task_complete]
 reward:
   incremental: true
   terminal: true

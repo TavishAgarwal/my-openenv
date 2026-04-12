@@ -33,6 +33,16 @@ Unlike single-task benchmarks, InboxOps tests **cross-task reasoning** — infor
 | `step_count`      | `int`                   | Number of actions taken so far                             |
 | `task_complete`   | `bool`                  | Whether the episode is finished                           |
 
+## State Space
+
+The `state()` method returns the current `Observation` object without advancing the episode or consuming a step. It is equivalent to a read-only snapshot of the environment's observable state.
+
+```python
+env = InboxOpsEnv(seed=42)
+obs = env.reset()
+current = env.state()  # same as obs, no step consumed
+```
+
 ---
 
 ## Action Space
@@ -76,7 +86,7 @@ Route 10 tickets to the correct team with escalation decisions.
 
 ### Task 3: Data Reconciliation (Hard)
 
-Find 5 planted discrepancies across 15 invoices and 12 purchase orders.
+Find 8 planted discrepancies across 15 invoices and 12 purchase orders.
 
 Matching is by `(invoice_id, po_id)` pair, with three scoring tiers:
 
@@ -86,7 +96,9 @@ Matching is by `(invoice_id, po_id)` pair, with three scoring tiers:
 | Pair match + wrong `discrepancy_type`      | +0.05   |
 | No pair match (false positive)             | −0.10   |
 
-Discrepancy types: `amount_mismatch`, `duplicate_line_item`, `missing_po`, `date_anomaly`
+Discrepancy types: `amount_mismatch`, `duplicate_line_item`, `missing_po`, `date_anomaly`, `vendor_mismatch`
+
+> **Note:** Three non-discrepancy near-misses are included to penalise agents that over-flag. Flagging a clean invoice costs −0.10.
 
 ### Step-Waste Penalties
 
@@ -117,8 +129,7 @@ pip install -r requirements.txt
 # Run tests
 pytest tests/ -v
 
-# Run baseline (requires HF_TOKEN)
-export HF_TOKEN=hf_your_token_here
+# Run rule-based baseline (no API key needed)
 python baseline/run_baseline.py
 ```
 
@@ -139,11 +150,11 @@ docker run inboxops pytest tests/ -v
 
 ## Baseline Scores
 
-| Task                 | GPT-4o | GPT-3.5 | Random |
-|----------------------|--------|---------|--------|
-| Email Triage         | ~0.81  | ~0.63   | ~0.21  |
-| Ticket Routing       | ~0.74  | ~0.55   | ~0.14  |
-| Data Reconciliation  | ~0.58  | ~0.31   | ~0.04  |
+| Task                 | Rule-based | GPT-4o | GPT-3.5 | Random |
+|----------------------|-----------|--------|---------|--------|
+| Email Triage         | ~0.79     | ~0.81  | ~0.63   | ~0.21  |
+| Ticket Routing       | ~0.13     | ~0.74  | ~0.55   | ~0.14  |
+| Data Reconciliation  | ~0.53     | ~0.58  | ~0.31   | ~0.04  |
 
 ---
 
@@ -167,6 +178,19 @@ action = LabelEmailAction(
 
 obs, reward, done, info = env.step(action)
 print(f"Reward: {reward.value}, Breakdown: {reward.breakdown}")
+```
+
+---
+
+## State API
+
+The `state()` method provides a read-only view of the current environment state. It returns the same `Observation` object as `reset()` and `step()`, but does not consume a step or advance the episode.
+
+```python
+env = InboxOpsEnv(seed=42)
+obs = env.reset()
+state = env.state()  # no step consumed
+assert state.current_task_id == obs.current_task_id
 ```
 
 ---

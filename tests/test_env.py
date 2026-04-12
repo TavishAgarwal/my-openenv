@@ -316,7 +316,7 @@ class TestSubmitReport:
     def test_perfect_report_scores_high(self, env: InboxOpsEnv):
         # Get planted discrepancies
         planted = env._episode["planted_discrepancies"]
-        assert len(planted) == 5
+        assert len(planted) == 8
 
         # Flag all planted discrepancies
         for p in planted:
@@ -339,7 +339,7 @@ class TestSubmitReport:
                     }
                     for p in planted
                 ],
-                "summary": "Found all 5 discrepancies.",
+                "summary": "Found all 8 discrepancies.",
             }
         )
         _, reward, done, info = env.step(report_action)
@@ -551,3 +551,16 @@ class TestFinalScores:
             assert 0.0 <= score <= 1.0, (
                 f"final_scores[{task_id}] = {score} is outside [0.0, 1.0]"
             )
+
+
+# -----------------------------------------------------------------------
+# Test: state() returns current observation
+# -----------------------------------------------------------------------
+
+class TestStateMethod:
+    def test_state_returns_current_observation(self):
+        env = InboxOpsEnv(seed=42)
+        obs = env.reset()
+        state = env.state()
+        assert state.current_task_id == obs.current_task_id
+        assert state.step_count == obs.step_count

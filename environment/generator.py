@@ -236,7 +236,7 @@ def generate_episode(seed: int = 42) -> dict:
         ))
 
     # ------------------------------------------------------------------
-    # 4. Planted discrepancies (exactly 5)
+    # 4. Planted discrepancies (exactly 8)
     # ------------------------------------------------------------------
     planted: List[PlantedDiscrepancy] = []
 
@@ -314,6 +314,97 @@ def generate_episode(seed: int = 42) -> dict:
             f"PO {po.po_id} approval date {po.approval_date.isoformat()}"
         ),
     ))
+
+    # Track all used indices so far
+    used_indices = set(mismatch_indices) | {dup_idx, date_idx}
+
+    # 1× VENDOR_MISMATCH — invoice vendor differs from PO vendor
+    vendor_mismatch_idx = rng.choice([
+        i for i in range(12)
+        if i not in used_indices
+    ])
+    inv = invoices[vendor_mismatch_idx]
+    po = purchase_orders[vendor_mismatch_idx]
+    wrong_vendor = rng.choice([v for v in vendor_names if v != po.vendor_name])
+    invoices[vendor_mismatch_idx] = inv.model_copy(update={"vendor_name": wrong_vendor})
+    planted.append(PlantedDiscrepancy(
+        invoice_id=inv.invoice_id,
+        po_id=po.po_id,
+        discrepancy_type=DiscrepancyType.VENDOR_MISMATCH,
+        description=(
+            f"Invoice {inv.invoice_id} vendor '{wrong_vendor}' differs from "
+            f"PO {po.po_id} vendor '{po.vendor_name}'"
+        ),
+    ))
+    used_indices.add(vendor_mismatch_idx)
+
+    # 1× additional AMOUNT_MISMATCH (third one)
+    extra_amt_idx = rng.choice([
+        i for i in range(12)
+        if i not in used_indices
+    ])
+    inv = invoices[extra_amt_idx]
+    po = purchase_orders[extra_amt_idx]
+    factor = 1 + rng.uniform(0.10, 0.25) * rng.choice([1, -1])
+    new_amount = round(po.approved_amount * factor, 2)
+    invoices[extra_amt_idx] = inv.model_copy(update={"amount": new_amount})
+    planted.append(PlantedDiscrepancy(
+        invoice_id=inv.invoice_id,
+        po_id=po.po_id,
+        discrepancy_type=DiscrepancyType.AMOUNT_MISMATCH,
+        description=(
+            f"Invoice {inv.invoice_id} amount ${new_amount:.2f} differs from "
+            f"PO {po.po_id} approved amount ${po.approved_amount:.2f} "
+            f"(off by {abs(factor - 1) * 100:.1f}%)"
+        ),
+    ))
+    used_indices.add(extra_amt_idx)
+
+    # 1× additional DATE_ANOMALY (second one)
+    extra_date_idx = rng.choice([
+        i for i in range(12)
+        if i not in used_indices
+    ])
+    inv = invoices[extra_date_idx]
+    po = purchase_orders[extra_date_idx]
+    bad_date = po.approval_date - timedelta(days=rng.randint(10, 60))
+    invoices[extra_date_idx] = inv.model_copy(update={"date": bad_date})
+    planted.append(PlantedDiscrepancy(
+        invoice_id=inv.invoice_id,
+        po_id=po.po_id,
+        discrepancy_type=DiscrepancyType.DATE_ANOMALY,
+        description=(
+            f"Invoice {inv.invoice_id} dated {bad_date.isoformat()} is before "
+            f"PO {po.po_id} approval date {po.approval_date.isoformat()}"
+        ),
+    ))
+    used_indices.add(extra_date_idx)
+
+    # ------------------------------------------------------------------
+    # 4b. Red herring invoices — look suspicious but are NOT discrepancies
+    # ------------------------------------------------------------------
+    # Red herring 1: invoice amount within 5% of PO (valid variance)
+    rh_amt_idx = rng.choice([
+        i for i in range(12)
+        if i not in used_indices
+    ])
+    inv = invoices[rh_amt_idx]
+    po = purchase_orders[rh_amt_idx]
+    # Small variance: 1-4% off — suspicious looking but valid
+    rh_factor = 1 + rng.uniform(0.01, 0.04) * rng.choice([1, -1])
+    rh_amount = round(po.approved_amount * rh_factor, 2)
+    invoices[rh_amt_idx] = inv.model_copy(update={"amount": rh_amount})
+    used_indices.add(rh_amt_idx)
+
+    # Red herring 2: invoice date same day as PO approval (edge case, valid)
+    rh_date_idx = rng.choice([
+        i for i in range(12)
+        if i not in used_indices
+    ])
+    inv = invoices[rh_date_idx]
+    po = purchase_orders[rh_date_idx]
+    invoices[rh_date_idx] = inv.model_copy(update={"date": po.approval_date})
+    used_indices.add(rh_date_idx)
 
     # ------------------------------------------------------------------
     # 5. Tickets (10 tickets)

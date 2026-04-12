@@ -1,0 +1,14 @@
+{
+  "task1": {
+    "score": 0.788,
+    "steps": 25
+  },
+  "task2": {
+    "score": 0.125,
+    "steps": 10
+  },
+  "task3": {
+    "score": 0.5312,
+    "steps": 37
+  }
+}

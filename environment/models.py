@@ -70,6 +70,7 @@ class DiscrepancyType(str, Enum):
     AMOUNT_MISMATCH = "amount_mismatch"
     MISSING_PO = "missing_po"
     DATE_ANOMALY = "date_anomaly"
+    VENDOR_MISMATCH = "vendor_mismatch"
 
 
 class PlantedDiscrepancy(BaseModel):

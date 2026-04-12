@@ -68,7 +68,7 @@ For Task 2 (ticket routing), respond with:
 
 For Task 3 (reconciliation), first use query_db to investigate, then flag discrepancies, then submit report:
 {"action_type": "query_db", "sql": "SELECT ..."}
-{"action_type": "flag_discrepancy", "invoice_id": "...", "po_id": "...", "discrepancy_type": "...", "explanation": "..."}
+{"action_type": "flag_discrepancy", "invoice_id": "...", "po_id": "...", "discrepancy_type": "amount_mismatch|duplicate_line_item|missing_po|date_anomaly|vendor_mismatch", "explanation": "..."}
 {"action_type": "submit_report", "report": {"discrepancies": [...], "summary": "..."}}
 
 Always process urgent items first. Check SLA breach times carefully.
@@ -172,7 +172,7 @@ def run_task(task_name: str, seed: int):
 
     try:
         try:
-            env = InboxOpsEnv()
+            env = InboxOpsEnv(seed=seed)
         except Exception as e:
             print(f"[DEBUG] Failed to initialize environment: {e}", flush=True)
             log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[])

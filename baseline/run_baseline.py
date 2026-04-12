@@ -1,8 +1,7 @@
-"""Baseline inference script for InboxOps.
+"""Rule-based baseline agent for InboxOps.
 
-Reads HF_TOKEN from environment (used as OpenAI API key against
-Hugging Face Inference API). Runs one full episode through all 3 tasks
-and prints a score table.
+Runs a simple keyword-matching heuristic agent through all 3 tasks.
+No LLM required — purely deterministic.
 """
 
 from __future__ import annotations
@@ -10,16 +9,13 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import Any
+from pathlib import Path
 
-from openai import OpenAI
-
-# Ensure project root is on the path when run from Docker or directly
+# Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from environment.env import InboxOpsEnv
 from environment.models import (
-    Action,
     FlagDiscrepancyAction,
     LabelEmailAction,
     QueryDatabaseAction,
@@ -27,178 +23,182 @@ from environment.models import (
     SubmitReportAction,
 )
 
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
-client = OpenAI(
-    base_url="https://api-inference.huggingface.co/v1/",
-    api_key=HF_TOKEN,
-)
-MODEL = "Qwen/Qwen2.5-72B-Instruct"
+# ---------------------------------------------------------------------------
+# Task 1: Email triage via keyword matching
+# ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """
-You are an operations analyst. You will be given an inbox, ticket queue,
-and financial records. Respond ONLY with a valid JSON action object.
+def _classify_email(subject: str, body: str) -> tuple[str, int, str]:
+    """Return (label, urgency, next_action) using keyword matching."""
+    text = (subject + " " + body).lower()
 
-For Task 1 (email triage), respond with:
-{"action_type": "label_email", "email_id": "...", "label": "billing|onboarding|outage|spam|general", "urgency": 1-5, "next_action": "reply|escalate|archive|forward"}
-
-For Task 2 (ticket routing), respond with:
-{"action_type": "route_ticket", "ticket_id": "...", "team": "billing|infra|product|account_management", "escalate": true|false, "draft_message": "..."}
-
-For Task 3 (reconciliation), first use query_db to investigate, then flag discrepancies, then submit report:
-{"action_type": "query_db", "sql": "SELECT ..."}
-{"action_type": "flag_discrepancy", "invoice_id": "...", "po_id": "...", "discrepancy_type": "...", "explanation": "..."}
-{"action_type": "submit_report", "report": {"discrepancies": [...], "summary": "..."}}
-
-Always process urgent items first. Check SLA breach times carefully.
-Cross-reference invoice IDs mentioned in ticket descriptions with Task 3 data.
-""".strip()
+    if any(kw in text for kw in ("invoice", "charge", "payment", "refund", "billing")):
+        return "billing", 3, "reply"
+    if any(kw in text for kw in ("outage", "503", "error", "alert", "connection pool")):
+        return "outage", 3, "escalate"
+    if any(kw in text for kw in ("new hire", "onboarding", "access", "welcome", "new team")):
+        return "onboarding", 3, "forward"
+    if any(kw in text for kw in ("click", "prize", "urgent verify", "won a", "gift card",
+                                   "$$", "wire transfer", "guaranteed returns",
+                                   "track it here", "update your account")):
+        return "spam", 3, "archive"
+    return "general", 3, "reply"
 
 
-def build_context(obs: Any) -> str:
-    """Serialize current observation to a readable prompt string.
+# ---------------------------------------------------------------------------
+# Task 2: Ticket routing via keyword matching
+# ---------------------------------------------------------------------------
 
-    Excludes ground-truth fields so the agent only sees what it should.
-    """
-    lines: list[str] = []
-    lines.append(f"=== Current Task: {obs.current_task_id} (step {obs.step_count}) ===\n")
+def _classify_ticket(description: str, customer_tier: str) -> tuple[str, bool]:
+    """Return (team, escalate) using keyword matching."""
+    text = description.lower()
 
-    if obs.current_task_id == "task1":
-        lines.append("## Inbox (process each email)\n")
-        for email in obs.inbox:
-            d = email.model_dump()
-            d["timestamp"] = d["timestamp"].isoformat() if hasattr(d["timestamp"], "isoformat") else str(d["timestamp"])
-            lines.append(json.dumps(d, indent=2))
-            lines.append("")
+    if any(kw in text for kw in ("charge", "invoice", "billing", "charged")):
+        team = "billing"
+    elif any(kw in text for kw in ("latency", "pipeline", "503", "webhook", "api update")):
+        team = "infra"
+    elif any(kw in text for kw in ("feature", "export", "integration")):
+        team = "product"
+    else:
+        team = "account_management"
 
-    elif obs.current_task_id == "task2":
-        lines.append("## Ticket Queue (route each ticket)\n")
-        for ticket in obs.tickets:
-            d = ticket.model_dump()
-            for k in ("created_at", "sla_breach_at"):
-                if k in d and hasattr(d[k], "isoformat"):
-                    d[k] = d[k].isoformat()
-            lines.append(json.dumps(d, indent=2))
-            lines.append("")
-
-    elif obs.current_task_id == "task3":
-        lines.append("## Financial Records\n")
-        lines.append("### Invoices\n")
-        for inv in obs.invoices:
-            d = inv.model_dump()
-            if hasattr(d.get("date"), "isoformat"):
-                d["date"] = d["date"].isoformat()
-            lines.append(json.dumps(d, indent=2))
-        lines.append(f"\n{len(obs.invoices)} total invoices")
-        lines.append("\n### Purchase Orders (query via SQL)")
-        lines.append("Tables: purchase_orders(po_id, vendor_name, approved_amount, approval_date, status)")
-        lines.append("        invoices(invoice_id, vendor_name, amount, date, po_number)\n")
-        lines.append("Use query_db actions to investigate, then flag_discrepancy, then submit_report.")
-
-    return "\n".join(lines)
+    escalate = customer_tier == "enterprise"
+    return team, escalate
 
 
-def parse_action(raw: str) -> Action | None:
-    """Parse JSON string from LLM into typed Action model.
+# ---------------------------------------------------------------------------
+# Task 3: Reconciliation via simple amount comparison
+# ---------------------------------------------------------------------------
 
-    Returns None if the response cannot be parsed, allowing the caller
-    to skip the step gracefully.
-    """
-    try:
-        # Strip markdown code fences if present
-        text = raw.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            text = "\n".join(lines).strip()
+def _run_reconciliation(env: InboxOpsEnv) -> None:
+    """Query DB, flag mismatches, submit report."""
+    # Query all invoices and POs
+    query = QueryDatabaseAction(
+        sql=(
+            "SELECT i.invoice_id, i.vendor_name AS inv_vendor, i.amount, i.date, i.po_number, "
+            "p.po_id, p.vendor_name AS po_vendor, p.approved_amount, p.approval_date "
+            "FROM invoices i "
+            "LEFT JOIN purchase_orders p ON i.po_number = p.po_id"
+        )
+    )
+    _, _, _, info = env.step(query)
+    rows = info.get("query_result", {}).get("rows", [])
 
-        data = json.loads(text)
-        action_type = data.get("action_type", "")
+    flagged = []
+    for row in rows:
+        inv_id, inv_vendor, amount, inv_date, po_number, po_id, po_vendor, approved_amt, approval_date = row
 
-        if action_type == "label_email":
-            return LabelEmailAction(**data)
-        elif action_type == "route_ticket":
-            return RouteTicketAction(**data)
-        elif action_type == "query_db":
-            return QueryDatabaseAction(**data)
-        elif action_type == "flag_discrepancy":
-            return FlagDiscrepancyAction(**data)
-        elif action_type == "submit_report":
-            return SubmitReportAction(**data)
-        else:
-            print(f"  Unknown action_type: {action_type}")
-            return None
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        print(f"  Failed to parse action: {exc}")
-        return None
+        if po_number and po_id is None:
+            # Referenced PO doesn't exist
+            flag = FlagDiscrepancyAction(
+                invoice_id=inv_id,
+                po_id=po_number,
+                discrepancy_type="missing_po",
+                explanation=f"Invoice {inv_id} references PO {po_number} which does not exist.",
+            )
+            env.step(flag)
+            flagged.append(inv_id)
+            continue
+
+        if approved_amt is not None and amount != approved_amt:
+            # Check if difference is > 5% (to avoid red herrings)
+            pct_diff = abs(amount - approved_amt) / approved_amt if approved_amt else 0
+            if pct_diff > 0.05:
+                flag = FlagDiscrepancyAction(
+                    invoice_id=inv_id,
+                    po_id=po_id,
+                    discrepancy_type="amount_mismatch",
+                    explanation=f"Invoice amount {amount} != PO approved {approved_amt} (diff {pct_diff*100:.1f}%).",
+                )
+                env.step(flag)
+                flagged.append(inv_id)
+
+    # Submit report
+    report = SubmitReportAction(
+        report={
+            "discrepancies": [{"invoice_id": fid} for fid in flagged],
+            "summary": f"Found {len(flagged)} discrepancies via rule-based matching.",
+        }
+    )
+    env.step(report)
 
 
-def run_episode(seed: int = 42) -> dict:
-    """Run a complete episode using the HF inference API."""
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def run_all_tasks(seed: int = 42) -> dict:
+    """Run all 3 tasks with a rule-based agent. Returns results dict."""
     env = InboxOpsEnv(seed=seed)
     obs = env.reset()
-    total_reward = 0.0
-    task_scores: dict[str, float] = {}
-    max_steps = 200  # safety limit
 
-    step = 0
-    while step < max_steps:
-        context = build_context(obs)
+    total_steps = 0
 
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": context},
-                ],
-                max_tokens=512,
-            )
-            raw = response.choices[0].message.content or ""
-        except Exception as exc:
-            print(f"  [Step {step}] API error: {exc}")
-            break
-
-        try:
-            action = parse_action(raw)
-        except Exception as exc:
-            print(f"  [Step {step}] Parse error: {exc}")
-            print(f"  Raw response: {raw[:200]}")
-            step += 1
-            continue
-
-        if action is None:
-            print(f"  [Step {step}] Could not parse response, skipping")
-            print(f"  Raw response: {raw[:200]}")
-            step += 1
-            continue
-
+    # --- Task 1: Email triage ---
+    for email in obs.inbox:
+        label, urgency, next_action = _classify_email(email.subject, email.body)
+        action = LabelEmailAction(
+            email_id=email.email_id,
+            label=label,
+            urgency=urgency,
+            next_action=next_action,
+        )
         obs, reward, done, info = env.step(action)
-        total_reward += reward.value
+        total_steps += 1
 
-        print(f"  [Step {step}] {action.action_type} → reward={reward.value:.3f}")
+    task1_score = env._scores.get("task1", 0.0)
 
-        if done:
-            task_scores = info.get("final_scores", {})
-            break
+    # --- Task 2: Ticket routing ---
+    for ticket in obs.tickets:
+        team, escalate = _classify_ticket(ticket.description, ticket.customer_tier.value)
+        action = RouteTicketAction(
+            ticket_id=ticket.ticket_id,
+            team=team,
+            escalate=escalate,
+            draft_message="Routing to appropriate team for review.",
+        )
+        obs, reward, done, info = env.step(action)
+        total_steps += 1
 
-        step += 1
+    task2_score = env._scores.get("task2", 0.0)
 
-    print("\n" + "=" * 40)
-    print("  InboxOps Baseline Results")
-    print("=" * 40)
-    for task, score in task_scores.items():
-        print(f"  {task}: {score:.3f}")
-    print(f"  Total: {total_reward:.3f}")
-    print("=" * 40)
+    # --- Task 3: Reconciliation ---
+    _run_reconciliation(env)
+    total_steps += 2  # at least query + submit
 
-    return task_scores
+    task3_score = env._scores.get("task3", 0.0)
+
+    results = {
+        "task1": {"score": round(task1_score, 4), "steps": len(obs.inbox)},
+        "task2": {"score": round(task2_score, 4), "steps": len(obs.tickets)},
+        "task3": {"score": round(task3_score, 4), "steps": total_steps},
+    }
+
+    return results
+
+
+def main():
+    results = run_all_tasks(seed=42)
+
+    # Print summary table
+    print("\n" + "=" * 50)
+    print("  InboxOps Rule-Based Baseline Results")
+    print("=" * 50)
+    print(f"  {'Task':<25} {'Score':>8} {'Steps':>8}")
+    print("-" * 50)
+    for task_id in ("task1", "task2", "task3"):
+        r = results[task_id]
+        print(f"  {task_id:<25} {r['score']:>8.4f} {r['steps']:>8}")
+    print("=" * 50)
+
+    # Save results
+    out_path = Path(__file__).parent / "baseline_results.json"
+    with open(out_path, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"\nResults saved to {out_path}")
+
+    return results
 
 
 if __name__ == "__main__":
-    if not HF_TOKEN:
-        print("WARNING: HF_TOKEN not set. Set it to use HuggingFace Inference API.")
-        print("Example: export HF_TOKEN=hf_xxxxxxxxx")
-        print("Running in dry-run mode (will fail on API calls).\n")
-
-    run_episode()
+    main()
