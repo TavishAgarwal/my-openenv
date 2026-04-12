@@ -22,7 +22,28 @@ from environment.models import (
     SubmitReportAction,
 )
 
-app = FastAPI()
+app = FastAPI(
+    title="InboxOps",
+    description="OpenEnv-compliant AI agent training environment.",
+    version="1.0.0",
+)
+
+
+@app.get("/")
+def root():
+    return {
+        "name": "InboxOps",
+        "version": "1.0.0",
+        "description": "OpenEnv environment: email triage, ticket routing, financial reconciliation.",
+        "endpoints": {
+            "health":  "GET  /health",
+            "reset":   "POST /reset",
+            "step":    "POST /step",
+            "state":   "GET  /state?session_id=<id>",
+            "docs":    "GET  /docs",
+        },
+    }
+
 
 # Session store: each session_id maps to an isolated InboxOpsEnv instance.
 # For production use, add TTL-based eviction (see /session/{session_id} DELETE).
