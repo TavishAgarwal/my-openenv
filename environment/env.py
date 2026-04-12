@@ -178,6 +178,11 @@ class InboxOpsEnv:
             }
             info["final_scores"] = clamped_scores
             info["episode_complete"] = True
+            # Also clamp the reward.value itself — the API serializes this
+            # directly and the validator may read it as the "task score".
+            clamped_reward_val = min(max(reward.value, _SCORE_EPS), 1.0 - _SCORE_EPS)
+            if clamped_reward_val != reward.value:
+                reward = reward.model_copy(update={"value": clamped_reward_val})
 
         return self._state, reward, done, info
 

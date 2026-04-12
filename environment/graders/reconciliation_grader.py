@@ -131,11 +131,15 @@ def grade_report_submission(
     # Clamp final score to open interval (0, 1) — never exactly 0.0 or 1.0
     normalized = min(max(raw_score / max_possible, _EPS), 1.0 - _EPS)
 
-    breakdown["raw_score"] = round(raw_score, 4)
-    breakdown["normalized_score"] = round(normalized, 4)
+    breakdown["raw_score"] = round(raw_score, 6)
+    breakdown["normalized_score"] = round(normalized, 6)
+
+    # Round to 6dp (preserves 1e-6 epsilon), then re-clamp as safety net
+    # because round() can push a boundary value to exactly 0.0 or 1.0.
+    final_value = min(max(round(normalized, 6), _EPS), 1.0 - _EPS)
 
     return StepReward(
-        value=round(normalized, 4),
+        value=final_value,
         breakdown=breakdown,
         done=True,
         info={

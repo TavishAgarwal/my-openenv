@@ -356,8 +356,8 @@ class TestSubmitReport:
         _, reward, done, _ = env.step(report_action)
 
         assert done is True
-        # No flags → no score (but no false positives either)
-        assert reward.value == pytest.approx(0.0)
+        # No flags → near-zero score (clamped to epsilon, never exact 0.0)
+        assert reward.value == pytest.approx(1e-6, abs=1e-7)
 
     def test_false_positives_penalised(self):
         env = InboxOpsEnv(seed=42)
@@ -376,8 +376,8 @@ class TestSubmitReport:
         _, reward, done, _ = env.step(report_action)
 
         assert done is True
-        # Should be negative or zero due to false positive
-        assert reward.value <= 0.0
+        # Should be near-zero due to false positive (clamped to epsilon)
+        assert reward.value <= 1e-6 + 1e-7
 
 
 # -----------------------------------------------------------------------

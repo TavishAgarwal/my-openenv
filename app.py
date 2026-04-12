@@ -113,9 +113,22 @@ def step(body: dict):
 
     typed_action = ActionClass(**body)
     obs, reward, done, info = env.step(typed_action)
+
+    reward_data = reward.model_dump()
+
+    # Defense-in-depth: if done=True, clamp all score values to open (0, 1)
+    if done:
+        _EPS = 1e-6
+        reward_data["value"] = min(max(float(reward_data.get("value", _EPS)), _EPS), 1.0 - _EPS)
+        if "final_scores" in info:
+            info["final_scores"] = {
+                k: min(max(float(v), _EPS), 1.0 - _EPS)
+                for k, v in info["final_scores"].items()
+            }
+
     return {
         "observation": obs.model_dump(),
-        "reward": reward.model_dump(),
+        "reward": reward_data,
         "done": done,
         "info": info,
     }
