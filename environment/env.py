@@ -40,6 +40,10 @@ class InboxOpsEnv:
     # Fixed reference time matching the generator
     _NOW = datetime(2025, 3, 15, 9, 0, 0)
 
+    # Step-waste penalty configuration
+    MAX_STEPS: int = 200                # total step budget per episode
+    STEP_DECAY_THRESHOLD: int = 50      # step at which decay begins
+
     def __init__(self, seed: int = 42):
         self.seed = seed
         self._episode: dict | None = None
@@ -53,6 +57,8 @@ class InboxOpsEnv:
         # Ground-truth stores — populated during reset(), never exposed
         self._email_gt: dict[str, EmailGroundTruth] = {}
         self._ticket_gt: dict[str, TicketGroundTruth] = {}
+        # Previous-action tracking for repeat-action penalty
+        self._prev_action_key: tuple | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -76,6 +82,7 @@ class InboxOpsEnv:
         self._routed_tickets = {}
         self._flagged = []
         self._scores = {"task1": 0.0, "task2": 0.0, "task3": 0.0}
+        self._prev_action_key = None
         # Populate private ground-truth stores from episode data
         self._email_gt = self._episode["email_ground_truths"]
         self._ticket_gt = self._episode["ticket_ground_truths"]
@@ -117,6 +124,37 @@ class InboxOpsEnv:
             reward = self._handle_submit_report(action)
         else:
             raise ValueError(f"Unknown action type: {type(action)}")
+
+        # --- Step-waste penalties (applied before per-step clamp) ---
+        if not reward.done:
+            current_key = self._action_key(action)
+            new_value = reward.value
+            updated_breakdown = dict(reward.breakdown)
+
+            # 1) Repeat-action penalty: −0.01 if this action is identical
+            #    to the immediately preceding one (same type + key fields).
+            if current_key is not None and current_key == self._prev_action_key:
+                new_value -= 0.01
+                updated_breakdown["repeat_action_penalty"] = -0.01
+
+            # 2) Step-decay: after STEP_DECAY_THRESHOLD, gently reduce
+            #    rewards so agents that finish faster score higher.
+            #    factor = max(0.5, 1.0 − (step − threshold) / MAX_STEPS × 0.3)
+            step = self._state.step_count
+            if step > self.STEP_DECAY_THRESHOLD:
+                factor = max(
+                    0.5,
+                    1.0 - (step - self.STEP_DECAY_THRESHOLD) / self.MAX_STEPS * 0.3,
+                )
+                new_value = new_value * factor
+                updated_breakdown["step_decay_factor"] = round(factor, 4)
+
+            if new_value != reward.value or updated_breakdown != reward.breakdown:
+                reward = reward.model_copy(
+                    update={"value": round(new_value, 6), "breakdown": updated_breakdown}
+                )
+
+            self._prev_action_key = current_key
 
         # --- Clamp per-step reward to [-0.2, 0.2] (terminal rewards exempt) ---
         if not reward.done:
@@ -330,3 +368,22 @@ class InboxOpsEnv:
 
         self._action_history[key] += 1
         return self._action_history[key] >= 3
+
+    @staticmethod
+    def _action_key(action: Action) -> tuple | None:
+        """Return a hashable key for *action* based on type + key fields.
+
+        Used by the repeat-action penalty to compare consecutive actions.
+        Returns None for unrecognised action types (no penalty applied).
+        """
+        if isinstance(action, LabelEmailAction):
+            return ("label_email", action.email_id, action.label, action.urgency, action.next_action)
+        elif isinstance(action, RouteTicketAction):
+            return ("route_ticket", action.ticket_id, action.team, action.escalate)
+        elif isinstance(action, QueryDatabaseAction):
+            return ("query_db", action.sql)
+        elif isinstance(action, FlagDiscrepancyAction):
+            return ("flag_discrepancy", action.invoice_id, action.po_id, action.discrepancy_type)
+        elif isinstance(action, SubmitReportAction):
+            return ("submit_report",)
+        return None

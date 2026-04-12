@@ -33,8 +33,6 @@ Unlike single-task benchmarks, InboxOps tests **cross-task reasoning** — infor
 | `step_count`      | `int`                   | Number of actions taken so far                             |
 | `task_complete`   | `bool`                  | Whether the episode is finished                           |
 
-> **Note:** Ground-truth fields (`ground_truth_label`, `ground_truth_urgency`, etc.) are present in the models but should be excluded when serializing observations to the agent.
-
 ---
 
 ## Action Space
@@ -87,6 +85,18 @@ Find 5 planted discrepancies across 15 invoices and 12 purchase orders.
 | False positive              | −0.10   |
 
 Discrepancy types: `amount_mismatch`, `duplicate_line_item`, `missing_po`, `date_anomaly`
+
+### Step-Waste Penalties
+
+To discourage agents from burning steps without progress:
+
+| Penalty                | Condition                                              | Effect                                                     |
+|------------------------|--------------------------------------------------------|------------------------------------------------------------|
+| Repeat-action penalty  | Consecutive identical action (same type + key fields)  | −0.01 added to step reward                                 |
+| Step-decay factor      | After step 50 (configurable via `STEP_DECAY_THRESHOLD`)| Reward × `max(0.5, 1.0 − (step − 50) / 200 × 0.3)`       |
+| Loop detection         | Same action taken ≥3 times total                       | Step returns −0.2 immediately (existing behaviour)         |
+
+Both penalties are visible in `reward.breakdown` as `repeat_action_penalty` and `step_decay_factor`.
 
 ---
 
