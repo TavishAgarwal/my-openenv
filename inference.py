@@ -36,8 +36,8 @@ signal.alarm(18 * 60)
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://api.openai.com/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "default-model"
-HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "default-token"
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME") or os.getenv("IMAGE_NAME") or "default-image"
+HF_TOKEN = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 # ---------------------------------------------------------------------------
 # OpenAI client
@@ -168,7 +168,7 @@ def run_task(task_name: str, seed: int):
         epsilon = 1e-6
         safe_score = min(max(raw_score_val, epsilon), 1.0 - epsilon)
         rewards_str = ",".join([f"{r:.2f}" for r in r_list])
-        print(f"[END] success={str_success} steps={s_count} score={safe_score:.6f} rewards=[{rewards_str}]", flush=True)
+        print(f"[END] success={str_success} steps={s_count} score={safe_score:.2f} rewards={rewards_str}", flush=True)
 
     try:
         try:
