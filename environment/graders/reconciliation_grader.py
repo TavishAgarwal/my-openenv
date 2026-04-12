@@ -38,40 +38,44 @@ def grade_report_submission(
 ) -> StepReward:
     """Grade a set of flagged discrepancies against planted ground truth.
 
-    Deterministic scoring:
-        - Each planted discrepancy correctly identified (by invoice_id match): +0.15
-        - Each correctly typed (discrepancy_type also matches):               +0.05 bonus
-        - False positive (flagged but not planted):                           −0.10
-        - Final score = sum / (len(planted) * 0.20) → normalized 0.0–1.0
+    Three-tier scoring per flag:
+        - Correct (invoice_id, po_id) pair + correct type → full credit  (+0.20)
+        - Correct (invoice_id, po_id) pair + wrong type   → partial credit (+0.05)
+        - No pair match                                   → false positive  (−0.10)
+
+    Final score = sum / (len(planted) × 0.20) → normalized 0.0–1.0
     """
     breakdown: dict[str, float] = {}
     raw_score = 0.0
 
-    # Build lookup of planted discrepancies by invoice_id
-    planted_by_invoice: dict[str, PlantedDiscrepancy] = {}
+    # Build lookup of planted discrepancies by (invoice_id, po_id) pair
+    planted_by_pair: dict[tuple[str, str | None], PlantedDiscrepancy] = {}
     for p in planted:
-        planted_by_invoice[p.invoice_id] = p
+        planted_by_pair[(p.invoice_id, p.po_id)] = p
 
-    matched_invoice_ids: set[str] = set()
+    matched_pairs: set[tuple[str, str | None]] = set()
 
     for flag in submitted_flags:
         key = f"flag_{flag.invoice_id}"
-        if flag.invoice_id in planted_by_invoice and flag.invoice_id not in matched_invoice_ids:
-            gt = planted_by_invoice[flag.invoice_id]
-            matched_invoice_ids.add(flag.invoice_id)
+        pair = (flag.invoice_id, flag.po_id)
 
-            # Correctly identified
-            breakdown[f"{key}_identified"] = 0.15
-            raw_score += 0.15
+        # Check if (invoice_id, po_id) matches a real planted discrepancy
+        if pair in planted_by_pair and pair not in matched_pairs:
+            gt = planted_by_pair[pair]
+            matched_pairs.add(pair)
 
-            # Type bonus
             if flag.discrepancy_type.lower().strip() == gt.discrepancy_type.value.lower().strip():
-                breakdown[f"{key}_type_bonus"] = 0.05
-                raw_score += 0.05
+                # Full credit: pair match + correct type
+                breakdown[f"{key}_identified"] = 0.15
+                breakdown[f"{key}_correct_type"] = 0.05
+                raw_score += 0.20
             else:
-                breakdown[f"{key}_type_bonus"] = 0.0
+                # Partial credit: pair match, wrong type
+                breakdown[f"{key}_identified_pair"] = 0.05
+                breakdown[f"{key}_wrong_type"] = 0.0
+                raw_score += 0.05
         else:
-            # False positive
+            # False positive: pair does not match any planted discrepancy
             breakdown[f"{key}_false_positive"] = -0.10
             raw_score -= 0.10
 
@@ -90,6 +94,6 @@ def grade_report_submission(
         info={
             "planted_count": len(planted),
             "flagged_count": len(submitted_flags),
-            "matched_count": len(matched_invoice_ids),
+            "matched_count": len(matched_pairs),
         },
     )

@@ -78,11 +78,13 @@ Route 10 tickets to the correct team with escalation decisions.
 
 Find 5 planted discrepancies across 15 invoices and 12 purchase orders.
 
-| Scoring Component           | Points  |
-|-----------------------------|---------|
-| Correctly identified        | +0.15   |
-| Correct discrepancy type    | +0.05   |
-| False positive              | −0.10   |
+Matching is by `(invoice_id, po_id)` pair, with three scoring tiers:
+
+| Scoring Component                          | Points  |
+|--------------------------------------------|---------|
+| Pair match + correct `discrepancy_type`    | +0.20   |
+| Pair match + wrong `discrepancy_type`      | +0.05   |
+| No pair match (false positive)             | −0.10   |
 
 Discrepancy types: `amount_mismatch`, `duplicate_line_item`, `missing_po`, `date_anomaly`
 
