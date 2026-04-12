@@ -165,10 +165,10 @@ def run_task(task_name: str, seed: int):
 
     def log_end(success_flag, s_count, raw_score_val, r_list):
         str_success = "true" if success_flag else "false"
-        epsilon = 1e-6
+        epsilon = 1e-4
         safe_score = min(max(raw_score_val, epsilon), 1.0 - epsilon)
         rewards_str = ",".join([f"{r:.2f}" for r in r_list])
-        print(f"[END] success={str_success} steps={s_count} score={safe_score:.2f} rewards={rewards_str}", flush=True)
+        print(f"[END] success={str_success} steps={s_count} score={safe_score:.4f} rewards={rewards_str}", flush=True)
 
     try:
         try:
@@ -249,9 +249,7 @@ def run_task(task_name: str, seed: int):
         _debug(f"Execution error: {e}")
     finally:
         total_sum = sum(rewards_list)
-        raw_score = total_sum / max_total_reward if max_total_reward > 0 else 0.0
-        
-        # No artificial fallback — failed runs get honest 0.0
+        raw_score = total_sum / max_total_reward if max_total_reward > 0 else 1e-4
 
         log_end(success, step_count, raw_score, rewards_list)
         
