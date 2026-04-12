@@ -31,9 +31,6 @@ class EmailMessage(BaseModel):
     sender: str
     sender_type: SenderType
     timestamp: datetime
-    ground_truth_label: str        # billing/onboarding/outage/spam/general
-    ground_truth_urgency: int      # 1-5
-    ground_truth_next_action: str  # reply/escalate/archive/forward
 
 
 class CustomerTier(str, Enum):
@@ -48,8 +45,6 @@ class SupportTicket(BaseModel):
     customer_tier: CustomerTier
     created_at: datetime
     unresolved: bool
-    ground_truth_team: str         # billing/infra/product/account_management
-    ground_truth_escalate: bool
     sla_breach_at: datetime        # computed: created_at + tier_sla_hours
 
 
@@ -82,6 +77,25 @@ class PlantedDiscrepancy(BaseModel):
     po_id: Optional[str] = None
     discrepancy_type: DiscrepancyType
     description: str
+
+
+# ---------------------------------------------------------------------------
+# Internal ground-truth models (never exposed in Observation)
+# ---------------------------------------------------------------------------
+
+class EmailGroundTruth(BaseModel):
+    """Answer key for a single email — used only by graders."""
+    label: str                     # billing/onboarding/outage/spam/general
+    urgency: int                   # 1-5
+    next_action: str               # reply/escalate/archive/forward
+
+
+class TicketGroundTruth(BaseModel):
+    """Answer key for a single ticket — used only by graders."""
+    team: str                      # billing/infra/product/account_management
+    escalate: bool
+    customer_tier: CustomerTier    # needed for enterprise wrong-team penalty
+    sla_breach_at: datetime        # needed for SLA breach penalty
 
 
 # ---------------------------------------------------------------------------

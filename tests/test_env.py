@@ -81,11 +81,12 @@ class TestStep:
     def test_step_returns_correct_types(self, env: InboxOpsEnv):
         obs = env.state()
         email = obs.inbox[0]
+        gt = env._email_gt[email.email_id]
         action = LabelEmailAction(
             email_id=email.email_id,
-            label=email.ground_truth_label,
-            urgency=email.ground_truth_urgency,
-            next_action=email.ground_truth_next_action,
+            label=gt.label,
+            urgency=gt.urgency,
+            next_action=gt.next_action,
         )
         result = env.step(action)
         assert len(result) == 4
@@ -99,11 +100,12 @@ class TestStep:
     def test_perfect_email_label_scores_max(self, env: InboxOpsEnv):
         obs = env.state()
         email = obs.inbox[0]
+        gt = env._email_gt[email.email_id]
         action = LabelEmailAction(
             email_id=email.email_id,
-            label=email.ground_truth_label,
-            urgency=email.ground_truth_urgency,
-            next_action=email.ground_truth_next_action,
+            label=gt.label,
+            urgency=gt.urgency,
+            next_action=gt.next_action,
         )
         _, reward, _, _ = env.step(action)
         assert reward.value == pytest.approx(0.10, abs=0.001)
@@ -178,11 +180,12 @@ class TestTaskAdvancement:
 
         # Label all 25 emails
         for email in obs.inbox:
+            gt = env._email_gt[email.email_id]
             action = LabelEmailAction(
                 email_id=email.email_id,
-                label=email.ground_truth_label,
-                urgency=email.ground_truth_urgency,
-                next_action=email.ground_truth_next_action,
+                label=gt.label,
+                urgency=gt.urgency,
+                next_action=gt.next_action,
             )
             new_obs, _, _, _ = env.step(action)
 
@@ -193,11 +196,12 @@ class TestTaskAdvancement:
 
         # Complete task 1
         for email in obs.inbox:
+            gt = env._email_gt[email.email_id]
             action = LabelEmailAction(
                 email_id=email.email_id,
-                label=email.ground_truth_label,
-                urgency=email.ground_truth_urgency,
-                next_action=email.ground_truth_next_action,
+                label=gt.label,
+                urgency=gt.urgency,
+                next_action=gt.next_action,
             )
             obs, _, _, _ = env.step(action)
 
@@ -205,10 +209,11 @@ class TestTaskAdvancement:
 
         # Complete task 2
         for ticket in obs.tickets:
+            gt = env._ticket_gt[ticket.ticket_id]
             action = RouteTicketAction(
                 ticket_id=ticket.ticket_id,
-                team=ticket.ground_truth_team,
-                escalate=ticket.ground_truth_escalate,
+                team=gt.team,
+                escalate=gt.escalate,
                 draft_message="Routing to appropriate team for billing invoice account review.",
             )
             obs, _, _, _ = env.step(action)
@@ -233,7 +238,7 @@ class TestReproducibility:
         for e1, e2 in zip(obs1.inbox, obs2.inbox):
             assert e1.email_id == e2.email_id
             assert e1.subject == e2.subject
-            assert e1.ground_truth_label == e2.ground_truth_label
+            assert env1._email_gt[e1.email_id].label == env2._email_gt[e2.email_id].label
 
         # Compare tickets
         assert len(obs1.tickets) == len(obs2.tickets)
@@ -386,11 +391,12 @@ class TestFullEpisode:
 
         # Task 1: Label all emails perfectly
         for email in obs.inbox:
+            gt = env._email_gt[email.email_id]
             action = LabelEmailAction(
                 email_id=email.email_id,
-                label=email.ground_truth_label,
-                urgency=email.ground_truth_urgency,
-                next_action=email.ground_truth_next_action,
+                label=gt.label,
+                urgency=gt.urgency,
+                next_action=gt.next_action,
             )
             obs, _, _, _ = env.step(action)
 
@@ -398,10 +404,11 @@ class TestFullEpisode:
 
         # Task 2: Route all tickets perfectly
         for ticket in obs.tickets:
+            gt = env._ticket_gt[ticket.ticket_id]
             action = RouteTicketAction(
                 ticket_id=ticket.ticket_id,
-                team=ticket.ground_truth_team,
-                escalate=ticket.ground_truth_escalate,
+                team=gt.team,
+                escalate=gt.escalate,
                 draft_message="Routing for billing invoice account pipeline review.",
             )
             obs, _, _, _ = env.step(action)
@@ -438,11 +445,12 @@ class TestRewardRange:
         """All email labelling step rewards must be in [-0.2, 0.2]."""
         obs = env.state()
         for email in obs.inbox:
+            gt = env._email_gt[email.email_id]
             action = LabelEmailAction(
                 email_id=email.email_id,
-                label=email.ground_truth_label,
-                urgency=email.ground_truth_urgency,
-                next_action=email.ground_truth_next_action,
+                label=gt.label,
+                urgency=gt.urgency,
+                next_action=gt.next_action,
             )
             _, reward, done, _ = env.step(action)
             if not done:
@@ -457,20 +465,22 @@ class TestRewardRange:
 
         # Complete task 1 first
         for email in obs.inbox:
+            gt = env._email_gt[email.email_id]
             action = LabelEmailAction(
                 email_id=email.email_id,
-                label=email.ground_truth_label,
-                urgency=email.ground_truth_urgency,
-                next_action=email.ground_truth_next_action,
+                label=gt.label,
+                urgency=gt.urgency,
+                next_action=gt.next_action,
             )
             obs, _, _, _ = env.step(action)
 
         # Now check ticket rewards
         for ticket in obs.tickets:
+            gt = env._ticket_gt[ticket.ticket_id]
             action = RouteTicketAction(
                 ticket_id=ticket.ticket_id,
-                team=ticket.ground_truth_team,
-                escalate=ticket.ground_truth_escalate,
+                team=gt.team,
+                escalate=gt.escalate,
                 draft_message="Routing for billing invoice account pipeline review.",
             )
             _, reward, done, _ = env.step(action)
@@ -507,20 +517,22 @@ class TestFinalScores:
 
         # Task 1
         for email in obs.inbox:
+            gt = env._email_gt[email.email_id]
             action = LabelEmailAction(
                 email_id=email.email_id,
-                label=email.ground_truth_label,
-                urgency=email.ground_truth_urgency,
-                next_action=email.ground_truth_next_action,
+                label=gt.label,
+                urgency=gt.urgency,
+                next_action=gt.next_action,
             )
             obs, _, _, _ = env.step(action)
 
         # Task 2
         for ticket in obs.tickets:
+            gt = env._ticket_gt[ticket.ticket_id]
             action = RouteTicketAction(
                 ticket_id=ticket.ticket_id,
-                team=ticket.ground_truth_team,
-                escalate=ticket.ground_truth_escalate,
+                team=gt.team,
+                escalate=gt.escalate,
                 draft_message="Routing for billing invoice account pipeline review.",
             )
             obs, _, _, _ = env.step(action)

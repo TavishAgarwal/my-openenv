@@ -66,11 +66,7 @@ def build_context(obs: Any) -> str:
     if obs.current_task_id == "task1":
         lines.append("## Inbox (process each email)\n")
         for email in obs.inbox:
-            d = email.model_dump(exclude={
-                "ground_truth_label",
-                "ground_truth_urgency",
-                "ground_truth_next_action",
-            })
+            d = email.model_dump()
             d["timestamp"] = d["timestamp"].isoformat() if hasattr(d["timestamp"], "isoformat") else str(d["timestamp"])
             lines.append(json.dumps(d, indent=2))
             lines.append("")
@@ -78,10 +74,7 @@ def build_context(obs: Any) -> str:
     elif obs.current_task_id == "task2":
         lines.append("## Ticket Queue (route each ticket)\n")
         for ticket in obs.tickets:
-            d = ticket.model_dump(exclude={
-                "ground_truth_team",
-                "ground_truth_escalate",
-            })
+            d = ticket.model_dump()
             for k in ("created_at", "sla_breach_at"):
                 if k in d and hasattr(d[k], "isoformat"):
                     d[k] = d[k].isoformat()

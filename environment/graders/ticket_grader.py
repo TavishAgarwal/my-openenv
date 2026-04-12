@@ -1,13 +1,13 @@
 """Grader for Task 2 — Support Ticket Routing.
 
-Scores a single RouteTicketAction against the ground-truth SupportTicket.
+Scores a single RouteTicketAction against the ground-truth TicketGroundTruth.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from environment.models import CustomerTier, RouteTicketAction, StepReward, SupportTicket
+from environment.models import CustomerTier, RouteTicketAction, StepReward, TicketGroundTruth
 
 # Keywords that a good draft message should contain per team
 _TEAM_KEYWORDS: dict[str, list[str]] = {
@@ -20,7 +20,7 @@ _TEAM_KEYWORDS: dict[str, list[str]] = {
 
 def grade_ticket_action(
     action: RouteTicketAction,
-    ground_truth: SupportTicket,
+    ground_truth: TicketGroundTruth,
     current_time: datetime,
 ) -> StepReward:
     """Grade a ticket routing action.
@@ -38,7 +38,7 @@ def grade_ticket_action(
     total = 0.0
 
     # --- Team ---
-    team_correct = action.team.lower().strip() == ground_truth.ground_truth_team.lower().strip()
+    team_correct = action.team.lower().strip() == ground_truth.team.lower().strip()
     if team_correct:
         breakdown["team_correct"] = 0.10
         total += 0.10
@@ -50,7 +50,7 @@ def grade_ticket_action(
             total -= 0.05
 
     # --- Escalate ---
-    if action.escalate == ground_truth.ground_truth_escalate:
+    if action.escalate == ground_truth.escalate:
         breakdown["escalate_correct"] = 0.05
         total += 0.05
     else:
@@ -65,7 +65,7 @@ def grade_ticket_action(
     # --- Draft message keyword check ---
     if action.draft_message:
         expected_keywords = _TEAM_KEYWORDS.get(
-            ground_truth.ground_truth_team.lower(), []
+            ground_truth.team.lower(), []
         )
         msg_lower = action.draft_message.lower()
         found = any(kw in msg_lower for kw in expected_keywords)

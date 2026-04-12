@@ -21,6 +21,7 @@ from environment.graders.reconciliation_grader import (
 from environment.graders.ticket_grader import grade_ticket_action
 from environment.models import (
     Action,
+    EmailGroundTruth,
     FlagDiscrepancyAction,
     LabelEmailAction,
     Observation,
@@ -29,6 +30,7 @@ from environment.models import (
     RouteTicketAction,
     StepReward,
     SubmitReportAction,
+    TicketGroundTruth,
 )
 
 
@@ -48,6 +50,9 @@ class InboxOpsEnv:
         self._labeled_emails: dict[str, LabelEmailAction] = {}
         self._routed_tickets: dict[str, RouteTicketAction] = {}
         self._flagged: List[FlagDiscrepancyAction] = []
+        # Ground-truth stores — populated during reset(), never exposed
+        self._email_gt: dict[str, EmailGroundTruth] = {}
+        self._ticket_gt: dict[str, TicketGroundTruth] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -71,6 +76,9 @@ class InboxOpsEnv:
         self._routed_tickets = {}
         self._flagged = []
         self._scores = {"task1": 0.0, "task2": 0.0, "task3": 0.0}
+        # Populate private ground-truth stores from episode data
+        self._email_gt = self._episode["email_ground_truths"]
+        self._ticket_gt = self._episode["ticket_ground_truths"]
         return self._state
 
     def step(self, action: Action) -> tuple[Observation, StepReward, bool, dict]:
@@ -134,12 +142,45 @@ class InboxOpsEnv:
             raise RuntimeError("Environment not initialised — call reset() first.")
         return self._state
 
+    @property
+    def max_reward(self) -> float:
+        """Theoretical maximum sum of per-step rewards across all tasks.
+
+        Computed from the actual episode data so it stays in sync with the
+        generator.  The calculation assumes every action earns the best
+        possible per-step reward:
+
+          Task 1 (email triage):
+            Each email can earn up to 0.10 per step
+            (label=0.05 + urgency_exact=0.03 + next_action=0.02).
+            Per-step clamp is [-0.2, 0.2], so 0.10 passes through.
+            → n_emails × 0.10
+
+          Task 2 (ticket routing):
+            Each ticket can earn up to 0.20 per step
+            (team=0.10 + escalate=0.05 + draft_keywords=0.05).
+            0.20 is exactly the per-step clamp ceiling.
+            → n_tickets × 0.20
+
+          Task 3 (reconciliation):
+            query_db and flag_discrepancy steps score 0.0.
+            submit_report returns a normalized [0, 1] score and is
+            exempt from per-step clamping (done=True).
+            → 1.0
+        """
+        if self._episode is None:
+            raise RuntimeError("Environment not initialised — call reset() first.")
+
+        n_emails = len(self._episode["emails"])
+        n_tickets = len(self._episode["tickets"])
+        return n_emails * 0.10 + n_tickets * 0.20 + 1.0
+
     # ------------------------------------------------------------------
     # Action handlers
     # ------------------------------------------------------------------
 
     def _handle_label_email(self, action: LabelEmailAction) -> StepReward:
-        gt = self._find_email(action.email_id)
+        gt = self._email_gt.get(action.email_id)
         if gt is None:
             return StepReward(
                 value=-0.05,
@@ -153,7 +194,7 @@ class InboxOpsEnv:
         return reward
 
     def _handle_route_ticket(self, action: RouteTicketAction) -> StepReward:
-        gt = self._find_ticket(action.ticket_id)
+        gt = self._ticket_gt.get(action.ticket_id)
         if gt is None:
             return StepReward(
                 value=-0.05,
@@ -203,17 +244,6 @@ class InboxOpsEnv:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _find_email(self, email_id: str):
-        for e in self._episode["emails"]:  # type: ignore[index]
-            if e.email_id == email_id:
-                return e
-        return None
-
-    def _find_ticket(self, ticket_id: str):
-        for t in self._episode["tickets"]:  # type: ignore[index]
-            if t.ticket_id == ticket_id:
-                return t
-        return None
 
     def _init_sqlite(self) -> None:
         """Create in-memory SQLite DB with purchase_orders and invoices tables."""

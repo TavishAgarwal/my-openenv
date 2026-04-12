@@ -1,16 +1,16 @@
 """Grader for Task 1 — Email Triage.
 
-Scores a single LabelEmailAction against the ground-truth EmailMessage.
+Scores a single LabelEmailAction against the ground-truth EmailGroundTruth.
 """
 
 from __future__ import annotations
 
-from environment.models import EmailMessage, LabelEmailAction, StepReward
+from environment.models import EmailGroundTruth, LabelEmailAction, StepReward
 
 
 def grade_email_action(
     action: LabelEmailAction,
-    ground_truth: EmailMessage,
+    ground_truth: EmailGroundTruth,
 ) -> StepReward:
     """Grade an email labelling action.
 
@@ -27,14 +27,14 @@ def grade_email_action(
     total = 0.0
 
     # --- Label ---
-    if action.label.lower().strip() == ground_truth.ground_truth_label.lower().strip():
+    if action.label.lower().strip() == ground_truth.label.lower().strip():
         breakdown["label_correct"] = 0.05
         total += 0.05
     else:
         breakdown["label_correct"] = 0.0
 
     # --- Urgency ---
-    diff = abs(action.urgency - ground_truth.ground_truth_urgency)
+    diff = abs(action.urgency - ground_truth.urgency)
     if diff == 0:
         breakdown["urgency_exact"] = 0.03
         total += 0.03
@@ -46,7 +46,7 @@ def grade_email_action(
         total -= 0.02
 
     # --- Next action ---
-    if action.next_action.lower().strip() == ground_truth.ground_truth_next_action.lower().strip():
+    if action.next_action.lower().strip() == ground_truth.next_action.lower().strip():
         breakdown["next_action_correct"] = 0.02
         total += 0.02
     else:

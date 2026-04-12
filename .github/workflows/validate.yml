@@ -1,0 +1,40 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Install openenv CLI
+        run: pip install openenv
+        continue-on-error: true
+
+      - name: Run openenv validate
+        run: |
+          if command -v openenv &> /dev/null; then
+            openenv validate
+          else
+            echo "::warning::openenv CLI not available — skipping validation"
+          fi

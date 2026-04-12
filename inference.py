@@ -55,7 +55,6 @@ except Exception as e:
 # Constants
 # ---------------------------------------------------------------------------
 MAX_STEPS = 200
-MAX_TOTAL_REWARD = 10.0  # Estimated max reward for scaling
 
 SYSTEM_PROMPT = """
 You are an operations analyst. You will be given an inbox, ticket queue,
@@ -91,14 +90,14 @@ def build_context(obs: Any) -> str:
     if obs.current_task_id == "task1":
         lines.append("## Inbox (process each email)\n")
         for email in obs.inbox:
-            d = email.model_dump(exclude={"ground_truth_label", "ground_truth_urgency", "ground_truth_next_action"})
+            d = email.model_dump()
             d["timestamp"] = d["timestamp"].isoformat() if hasattr(d["timestamp"], "isoformat") else str(d["timestamp"])
             lines.append(json.dumps(d, indent=2))
             lines.append("")
     elif obs.current_task_id == "task2":
         lines.append("## Ticket Queue (route each ticket)\n")
         for ticket in obs.tickets:
-            d = ticket.model_dump(exclude={"ground_truth_team", "ground_truth_escalate"})
+            d = ticket.model_dump()
             for k in ("created_at", "sla_breach_at"):
                 if k in d and hasattr(d[k], "isoformat"):
                     d[k] = d[k].isoformat()
@@ -161,6 +160,8 @@ def run_task(task_name: str, seed: int):
     total_reward = 0.0
     rewards_list = []
     success = False
+    # Will be set from env.max_reward after reset(); stays 0 on early failure
+    max_total_reward = 0.0
 
     def log_end(success_flag, s_count, raw_score_val, r_list):
         str_success = "true" if success_flag else "false"
@@ -174,11 +175,14 @@ def run_task(task_name: str, seed: int):
             env = InboxOpsEnv()
         except Exception as e:
             print(f"[DEBUG] Failed to initialize environment: {e}", flush=True)
-            log_end(success=False, s_count=0, raw_score_val=0.5, r_list=[])
+            log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[])
             return
 
         try:
             obs = env.reset()
+            # Read the true theoretical max from the environment so
+            # score normalisation stays in sync with the generator.
+            max_total_reward = env.max_reward
         except Exception as e:
             print(f"[DEBUG] env.reset() failed: {e}", flush=True)
             if hasattr(env, "close"):
@@ -186,7 +190,7 @@ def run_task(task_name: str, seed: int):
                     env.close()
                 except Exception:
                     pass
-            log_end(success=False, s_count=0, raw_score_val=0.5, r_list=[])
+            log_end(success=False, s_count=0, raw_score_val=0.0, r_list=[])
             return
 
         print(f"[START] task={task_name} env=InboxOpsEnv model={MODEL_NAME}", flush=True)
@@ -245,14 +249,9 @@ def run_task(task_name: str, seed: int):
         _debug(f"Execution error: {e}")
     finally:
         total_sum = sum(rewards_list)
-        raw_score = total_sum / MAX_TOTAL_REWARD if MAX_TOTAL_REWARD > 0 else 0.0
+        raw_score = total_sum / max_total_reward if max_total_reward > 0 else 0.0
         
-        # Override to safe fallback if failed
-        if not success and total_sum == 0.0:
-            raw_score = 0.5
-
-        if raw_score <= 0.0:
-            raw_score = 0.5
+        # No artificial fallback — failed runs get honest 0.0
 
         log_end(success, step_count, raw_score, rewards_list)
         

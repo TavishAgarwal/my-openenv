@@ -9,6 +9,10 @@ pinned: false
 ---
 # InboxOps
 
+## CI
+
+[![Validate](https://github.com/TavishAgarwal/my-openenv/actions/workflows/validate.yml/badge.svg)](https://github.com/TavishAgarwal/my-openenv/actions/workflows/validate.yml)
+
 **An OpenEnv-compliant AI agent training environment simulating an operations analyst's daily workload.**
 
 InboxOps presents an AI agent with three interconnected tasks that mirror the routine work of a junior operations analyst: triaging an email inbox, routing support tickets to the right teams, and reconciling financial records for discrepancies. The environment is fully deterministic (seeded), self-contained, and designed to evaluate an agent's ability to classify, reason under time pressure, query structured data, and maintain context across related tasks.

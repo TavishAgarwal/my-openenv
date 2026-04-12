@@ -15,12 +15,14 @@ from faker import Faker
 from environment.models import (
     CustomerTier,
     DiscrepancyType,
+    EmailGroundTruth,
     EmailMessage,
     Invoice,
     PlantedDiscrepancy,
     PurchaseOrder,
     SenderType,
     SupportTicket,
+    TicketGroundTruth,
 )
 
 
@@ -123,6 +125,7 @@ def generate_episode(seed: int = 42) -> dict:
                     SenderType.AUTOMATED_SYSTEM, SenderType.UNKNOWN]
 
     emails: List[EmailMessage] = []
+    email_ground_truths: Dict[str, EmailGroundTruth] = {}
     urgency_idx = 0
     for label, count in label_counts.items():
         templates = _EMAIL_TEMPLATES[label]
@@ -153,17 +156,22 @@ def generate_episode(seed: int = 42) -> dict:
                 urg = 1
             urgency_idx += 1
 
+            email_id = f"EMAIL-{len(emails)+1:03d}"
+
             emails.append(EmailMessage(
-                email_id=f"EMAIL-{len(emails)+1:03d}",
+                email_id=email_id,
                 subject=subject,
                 body=body,
                 sender=fake.email(),
                 sender_type=st,
                 timestamp=now - timedelta(minutes=rng.randint(5, 720)),
-                ground_truth_label=label,
-                ground_truth_urgency=urg,
-                ground_truth_next_action=_NEXT_ACTIONS[label],
             ))
+
+            email_ground_truths[email_id] = EmailGroundTruth(
+                label=label,
+                urgency=urg,
+                next_action=_NEXT_ACTIONS[label],
+            )
 
     rng.shuffle(emails)
 
@@ -319,6 +327,7 @@ def generate_episode(seed: int = 42) -> dict:
     shared_invoice_id = invoices[rng.randint(0, 14)].invoice_id
 
     tickets: List[SupportTicket] = []
+    ticket_ground_truths: Dict[str, TicketGroundTruth] = {}
     teams_cycle = _TICKET_TEAMS * 3  # enough for 10 tickets
     ticket_idx = 0
     near_sla_count = 0
@@ -361,16 +370,23 @@ def generate_episode(seed: int = 42) -> dict:
             if is_near_breach:
                 should_escalate = True
 
+            ticket_id = f"TKT-{ticket_idx+1:03d}"
+
             tickets.append(SupportTicket(
-                ticket_id=f"TKT-{ticket_idx+1:03d}",
+                ticket_id=ticket_id,
                 description=desc,
                 customer_tier=tier,
                 created_at=created,
                 unresolved=True,
-                ground_truth_team=team,
-                ground_truth_escalate=should_escalate,
                 sla_breach_at=sla_breach_at,
             ))
+
+            ticket_ground_truths[ticket_id] = TicketGroundTruth(
+                team=team,
+                escalate=should_escalate,
+                customer_tier=tier,
+                sla_breach_at=sla_breach_at,
+            )
             ticket_idx += 1
 
     rng.shuffle(tickets)
@@ -382,4 +398,6 @@ def generate_episode(seed: int = 42) -> dict:
         "purchase_orders": purchase_orders,
         "planted_discrepancies": planted,
         "shared_invoice_id": shared_invoice_id,
+        "email_ground_truths": email_ground_truths,
+        "ticket_ground_truths": ticket_ground_truths,
     }
