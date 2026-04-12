@@ -34,8 +34,8 @@ signal.alarm(18 * 60)
 # ---------------------------------------------------------------------------
 # Environment Variables
 # ---------------------------------------------------------------------------
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://api.openai.com/v1"
-MODEL_NAME = os.getenv("MODEL_NAME") or "default-model"
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "default-model")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
@@ -169,7 +169,7 @@ def run_task(task_name: str, seed: int):
         epsilon = 1e-6
         safe_score = min(max(raw_score_val, epsilon), 1.0 - epsilon)
         rewards_str = ",".join([f"{r:.6f}" for r in r_list])
-        print(f"[END] task={t_name} env=InboxOpsEnv success={str_success} steps={s_count} score={safe_score:.6f} rewards=[{rewards_str}]", flush=True)
+        print(f"[END] success={str_success} steps={s_count} score={safe_score:.6f} rewards=[{rewards_str}]", flush=True)
 
     try:
         try:
